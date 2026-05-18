@@ -1,163 +1,282 @@
-"""Støtte for Elaway sensorer."""
-from __future__ import annotations
-
-from datetime import timedelta
 import logging
-import aiohttp
-
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.device_registry import DeviceInfo
 
-from .const import DOMENE
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
-    """Sett opp sensorer basert på Elaway API-struktur."""
-    # Hent koordinatoren fra den sentrale lagringen i __init__.py
-    coordinator = hass.data[DOMENE][entry.entry_id]["coordinator"]
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Setter opp Elaway-sensorer basert på faktiske API-data."""
+    entry_data = hass.data[DOMAIN][entry.entry_id]
+    coordinator = entry_data["coordinator"]
 
-    
-    # 1. Hent ut API-klienten vi lagret i __init__.py
-    api = hass.data[DOMENE][entry.entry_id]
-    
-    # 2. Definer oppdateringsfunksjonen som erstatter Docker-kallene
-    async def _async_update_data():
-        try:
-            # Hent gyldig Bearer Token direkte fra vår nye asynkrone Python-klient
-            token = await api.async_get_valid_credentials()
-            
-            # Dette er den nøyaktige URL-en som Node-appen din brukte i bakgrunnen
-            url = f"{api.ampeco_api_url}/v1/user/chargers"
-            headers = {
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-                "User-Agent": "insomnia/10.0.0"
-            }
-            
-            # Hent rådataene direkte fra Elaway/Ampeco
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers) as response:
-                    if response.status != 200:
-                        raise UpdateFailed(f"Feil status fra Elaway API: {response.status}")
-                    
-                    raw_data = await response.json()
-                    
-                    # Siden sensorene dine forventer strukturen d['data'][...],
-                    # pakker vi dataene inn slik at lambda-funksjonene dine fungerer uendret.
-                    # Hvis Ampeco-responsen din returnerer en liste, henter vi det første elementet.
-                    if isinstance(raw_data, list):
-                        return {"data": raw_data[0]}
-                    return {"data": raw_data}
-                    
-        except Exception as err:
-            raise UpdateFailed(f"Klarte ikke å oppdatere Elaway-data: {err}")
-
-    # 3. Opprett koordinatoren lokalt her
-    coordinator = DataUpdateCoordinator(
-        hass,
-        _LOGGER,
-        name="Elaway Sensor Coordinator",
-        update_method=_async_update_data,
-        update_interval=timedelta(seconds=30), # Juster oppdateringsfrekvensen her
+    device_info = DeviceInfo(
+        identifiers={(DOMAIN, entry.entry_id)},
+        name=f"Elaway Lader ({entry.title})",
+        manufacturer="Eirik Skorstad",
+        model="Ampeco Powered Charger",
     )
 
-    # Hent første datapunkt umiddelbart under oppstart av HA
-    await coordinator.async_config_entry_first_refresh()
-    
+    # Her oppretter vi alle sensorene dine uten duplikater i koden
     sensors = [
-        # --- Eksisterende sensorer ---
-        ElawaySensor(
-            coordinator, entry, "price_per_kwh", "Price Per kWh", "NOK/kWh", SensorDeviceClass.MONETARY, 
-            lambda d: d['data']['evses'][0]['tariff']['pricing']['pricePerKwh']
-        ),
-        ElawaySensor(
-            coordinator, entry, "fixed_fee", "Fixed Fee Per kWh", "NOK/kWh", SensorDeviceClass.MONETARY, 
-            lambda d: d['data']['evses'][0]['tariff']['pricing']['markupFixedFeePerKwh']
-        ),
-        ElawaySensor(
-            coordinator, entry, "session_energy", "Current Session Energy", "kWh", SensorDeviceClass.ENERGY, 
-            lambda d: d['data']['evses'][0]['session']['energy'] / 1000, SensorStateClass.TOTAL
-        ),
-        ElawaySensor(
-            coordinator, entry, "session_power", "Current Session Power", "W", SensorDeviceClass.POWER, 
-            lambda d: d['data']['evses'][0]['session']['power'], SensorStateClass.MEASUREMENT
-        ),
-        ElawaySensor(
-            coordinator, entry, "session_total", "Session Total Cost", "NOK", SensorDeviceClass.MONETARY, 
-            lambda d: d['data']['evses'][0]['session']['totalAmount']
-        ),
-        ElawaySensor(
-            coordinator, entry, "time_started", "Session Started At", None, None, 
-            lambda d: d['data']['evses'][0]['session']['startedAt']
-        ),
-        ElawaySensor(
-            coordinator, entry, "tariff_name", "Tariff Name", None, None, 
-            lambda d: d['data']['evses'][0]['tariff']['name']
-        ),
-        ElawaySensor(
-            coordinator, entry, "month_energy", "Monthly Energy", "kWh", SensorDeviceClass.ENERGY, 
-            lambda d: d['data']['last_month_energy_kwh'], SensorStateClass.TOTAL_INCREASING
-        ),
-
-        # --- NYE SENSORER FRA RELL DATA ---
-        ElawaySensor(
-            coordinator, entry, "charging_state", "Charging State", None, None, 
-            lambda d: d['data']['evses'][0]['session']['chargingState'], icon="mdi:ev-station"
-        ),
-        ElawaySensor(
-            coordinator, entry, "allowed_max_current", "Allowed Max Current", "A", SensorDeviceClass.CURRENT, 
-            lambda d: d['data']['allowed_max_current_a'], SensorStateClass.MEASUREMENT
-        ),
-        ElawaySensor(
-            coordinator, entry, "allowed_max_power", "Allowed Max Power", "kW", SensorDeviceClass.POWER, 
-            lambda d: float(d['data']['allowed_max_power_kw']), SensorStateClass.MEASUREMENT
-        ),
-        ElawaySensor(
-            coordinator, entry, "firmware_version", "Firmware Version", None, None, 
-            lambda d: d['data']['firmware_version'], icon="mdi:firmware"
-        ),
-        ElawaySensor(
-            coordinator, entry, "light_intensity", "Charger Light Intensity", "%", None, 
-            lambda d: d['data']['light_intensity'] * 10, SensorStateClass.MEASUREMENT, icon="mdi:led-on"
-        ),
+        ElawayStatusSensor(coordinator, entry, device_info),
+        ElawayEvseStatusSensor(coordinator, entry, device_info),
+        ElawayMaxPowerSensor(coordinator, entry, device_info),
+        ElawayMaxCurrentSensor(coordinator, entry, device_info),
+        ElawayTariffPriceSensor(coordinator, entry, device_info),
+        ElawayTariffNameSensor(coordinator, entry, device_info),
+        ElawayLastMonthEnergySensor(coordinator, entry, device_info),
+        ElawayFirmwareSensor(coordinator, entry, device_info),
+        ElawaySmartChargingSensor(coordinator, entry, device_info),
+        ElawayOwnerSensor(coordinator, entry, device_info),
     ]
     
-    async_add_entities(sensors)
+    async_add_entities(sensors, True)
 
 
-class ElawaySensor(CoordinatorEntity, SensorEntity):
-    """Representasjon av en Elaway Sensor."""
+def get_root_data(coordinator_data):
+    """Hjelper for å hente ut rot-data-objektet trygt."""
+    if not coordinator_data:
+        return {}
+    if isinstance(coordinator_data, dict):
+        # Sjekker om dataene ligger inni en "data"-nøkkel eller i roten direkte
+        return coordinator_data.get("data", coordinator_data)
+    elif isinstance(coordinator_data, list) and len(coordinator_data) > 0:
+        return coordinator_data[0]
+    return {}
 
-    def __init__(self, coordinator, entry, key, name, unit, device_class, value_fn, state_class=None, icon=None):
-        """Initialiser sensoren."""
+
+class ElawayStatusSensor(CoordinatorEntity, SensorEntity):
+    """Hovedstatus for ladeboksen (f.eks. available)."""
+    def __init__(self, coordinator, entry, device_info):
         super().__init__(coordinator)
-        self._key = key
-        self._attr_name = name
-        self._attr_unit_of_measurement = unit
-        self._attr_device_class = device_class
-        self._attr_state_class = state_class
-        self._value_fn = value_fn
-        if icon:
-            self._attr_icon = icon
-        self._attr_unique_id = f"{entry.entry_id}_{key}"
-        
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMENE, "elaway_charger_device")},
-            name="Elaway EV Charger",
-            manufacturer="Utviklet av Eirik Skorstad",
-            model="Zaptec Charger Station",
-        )
+        self._attr_device_info = device_info
+        self._attr_name = "Elaway Boks Status"
+        self._attr_unique_id = f"{entry.entry_id}_box_status_sensor"
+        self._attr_icon = "mdi:cloud-check"
 
     @property
     def native_value(self):
-        """Returner nåværende verdi til Home Assistant med feilhåndtering."""
-        if not self.coordinator.data:
-            return None
+        return get_root_data(self.coordinator.data).get("status", "Ukjent")
+
+
+class ElawayEvseStatusSensor(CoordinatorEntity, SensorEntity):
+    """Spesifikk status for selve ladeuttaket (f.eks. preparing, charging)."""
+    def __init__(self, coordinator, entry, device_info):
+        super().__init__(coordinator)
+        self._attr_device_info = device_info
+        self._attr_name = "Elaway Ladestatus"
+        self._attr_unique_id = f"{entry.entry_id}_evse_status_sensor"
+        self._attr_icon = "mdi:ev-station"
+
+    @property
+    def native_value(self):
+        data = get_root_data(self.coordinator.data)
+        evses = data.get("evses", [])
+        if evses and isinstance(evses, list):
+            return evses[0].get("status", "Ukjent")
+        return "Ukjent"
+
+
+class ElawayMaxPowerSensor(CoordinatorEntity, SensorEntity):
+    """Maksimal tillatt ladeeffekt satt av systemet (kW)."""
+    def __init__(self, coordinator, entry, device_info):
+        super().__init__(coordinator)
+        self._attr_device_info = device_info
+        self._attr_name = "Elaway Maks Ladeeffekt"
+        self._attr_unique_id = f"{entry.entry_id}_max_power_sensor"
+        self._attr_icon = "mdi:lightning-bolt"
+        self._attr_native_unit_of_measurement = "kW"
+        self._attr_device_class = "power"
+
+    @property
+    def native_value(self):
         try:
-            return self._value_fn(self.coordinator.data)
-        except (KeyError, IndexError, TypeError):
-            return None
+            val = get_root_data(self.coordinator.data).get("allowed_max_power_kw")
+            return float(val) if val is not None else 22.2
+        except Exception:
+            return 22.2
+
+
+class ElawayMaxCurrentSensor(CoordinatorEntity, SensorEntity):
+    """Maksimal tillatt strømstyrke (A)."""
+    def __init__(self, coordinator, entry, device_info):
+        super().__init__(coordinator)
+        self._attr_device_info = device_info
+        self._attr_name = "Elaway Maks Strømstyrke"
+        self._attr_unique_id = f"{entry.entry_id}_max_current_sensor"
+        self._attr_icon = "mdi:current-ac"
+        self._attr_native_unit_of_measurement = "A"
+
+    @property
+    def native_value(self):
+        try:
+            val = get_root_data(self.coordinator.data).get("allowed_max_current_a")
+            return int(val) if val is not None else 32
+        except Exception:
+            return 32
+
+
+class ElawayTariffPriceSensor(CoordinatorEntity, SensorEntity):
+    """Gjeldende strømpris per kWh satt av borettslaget (inkl. valuta)."""
+    def __init__(self, coordinator, entry, device_info):
+        super().__init__(coordinator)
+        self._attr_device_info = device_info
+        self._attr_name = "Elaway Ladepris"
+        self._attr_unique_id = f"{entry.entry_id}_tariff_price_sensor"
+        self._attr_icon = "mdi:cash-100"
+
+    @property
+    def native_value(self):
+        data = get_root_data(self.coordinator.data)
+        evses = data.get("evses", [])
+        if evses and isinstance(evses, list):
+            tariff = evses[0].get("tariff", {})
+            pricing = tariff.get("pricing", {}) if isinstance(tariff, dict) else {}
+            price = pricing.get("pricePerKwh") if isinstance(pricing, dict) else None
+            currency = tariff.get("currency", "NOK") if isinstance(tariff, dict) else "NOK"
+            if price is not None:
+                return f"{price} {currency}/kWh"
+        return "Ukjent"
+
+
+class ElawayTariffNameSensor(CoordinatorEntity, SensorEntity):
+    """Navnet på tariffen/avtalen som er aktiv på laderen."""
+    def __init__(self, coordinator, entry, device_info):
+        super().__init__(coordinator)
+        self._attr_device_info = device_info
+        self._attr_name = "Elaway Tariffnavn"
+        self._attr_unique_id = f"{entry.entry_id}_tariff_name_sensor"
+        self._attr_icon = "mdi:file-sign"
+
+    @property
+    def native_value(self):
+        data = get_root_data(self.coordinator.data)
+        evses = data.get("evses", [])
+        if evses and isinstance(evses, list):
+            tariff = evses[0].get("tariff", {})
+            if isinstance(tariff, dict):
+                return tariff.get("name", "Ukjent")
+        return "Ukjent"
+
+
+class ElawayLastMonthEnergySensor(CoordinatorEntity, SensorEntity):
+    """Strømforbruk forrige måned (kWh)."""
+    def __init__(self, coordinator, entry, device_info):
+        super().__init__(coordinator)
+        self._attr_device_info = device_info
+        self._attr_name = "Elaway Forbruk Forrige Måned"
+        self._attr_unique_id = f"{entry.entry_id}_last_month_energy_sensor"
+        self._attr_icon = "mdi:calendar-month"
+        self._attr_native_unit_of_measurement = "kWh"
+        self._attr_device_class = "energy"
+
+    @property
+    def native_value(self):
+        try:
+            val = get_root_data(self.coordinator.data).get("last_month_energy_kwh")
+            return float(val) if val is not None else 0.0
+        except Exception:
+            return 0.0
+
+
+class ElawayFirmwareSensor(CoordinatorEntity, SensorEntity):
+    """Firmware-versjon installert på ladeboksen."""
+    def __init__(self, coordinator, entry, device_info):
+        super().__init__(coordinator)
+        self._attr_device_info = device_info
+        self._attr_name = "Elaway Firmware Versjon"
+        self._attr_unique_id = f"{entry.entry_id}_firmware_sensor"
+        self._attr_icon = "mdi:update"
+
+    @property
+    def native_value(self):
+        return get_root_data(self.coordinator.data).get("firmware_version", "Ukjent")
+
+
+class ElawaySmartChargingSensor(CoordinatorEntity, SensorEntity):
+    """Viser om smartlading (tidsplan) er aktivert i appen."""
+    def __init__(self, coordinator, entry, device_info):
+        super().__init__(coordinator)
+        self._attr_device_info = device_info
+        self._attr_name = "Elaway Smartlading Aktiv"
+        self._attr_unique_id = f"{entry.entry_id}_smart_charging_sensor"
+        self._attr_icon = "mdi:brain"
+
+    @property
+    def native_value(self):
+        is_enabled = get_root_data(self.coordinator.data).get("smart_charging_enabled", False)
+        return "Ja" if is_enabled else "Nei"
+
+
+class ElawayOwnerSensor(CoordinatorEntity, SensorEntity):
+    """Registrert eier av ladeboksen."""
+    def __init__(self, coordinator, entry, device_info):
+        super().__init__(coordinator)
+        self._attr_device_info = device_info
+        self._attr_name = "Elaway Registrert Eier"
+        self._attr_unique_id = f"{entry.entry_id}_owner_sensor"
+        self._attr_icon = "mdi:account"
+
+    @property
+    def native_value(self):
+        return get_root_data(self.coordinator.data).get("ownerName", "Ukjent")
+class ElawayFixedFeeSensor(CoordinatorEntity, SensorEntity):
+    """Viser fast oppstartsavgift for ladesesjonen (Connection Fee)."""
+    def __init__(self, coordinator, entry, device_info):
+        super().__init__(coordinator)
+        self._attr_device_info = device_info
+        self._attr_name = "Elaway Fast Oppstartsavgift"
+        self._attr_unique_id = f"{entry.entry_id}_fixed_fee_sensor"
+        self._attr_icon = "mdi:cash-marker"
+
+    @property
+    def native_value(self):
+        """Henter ut connectionFee (f.eks. 0)."""
+        data = get_root_data(self.coordinator.data)
+        evses = data.get("evses", [])
+        if evses and isinstance(evses, list):
+            tariff = evses[0].get("tariff", {})
+            if isinstance(tariff, dict):
+                pricing = tariff.get("pricing", {})
+                if isinstance(pricing, dict):
+                    return pricing.get("connectionFee", 0)
+        return 0
+
+    @property
+    def native_unit_of_measurement(self):
+        """Henter valutaen dynamisk (f.eks. NOK)."""
+        data = get_root_data(self.coordinator.data)
+        evses = data.get("evses", [])
+        if evses and isinstance(evses, list):
+            tariff = evses[0].get("tariff", {})
+            if isinstance(tariff, dict):
+                return tariff.get("currency", "NOK")
+        return "NOK"
+
+    @property
+    def extra_state_attributes(self):
+        """Legger til det faste kWh-påslaget som et ekstra attributt."""
+        data = get_root_data(self.coordinator.data)
+        evses = data.get("evses", [])
+        markup_fee = 0
+        
+        if evses and isinstance(evses, list):
+            tariff = evses[0].get("tariff", {})
+            if isinstance(tariff, dict):
+                pricing = tariff.get("pricing", {})
+                if isinstance(pricing, dict):
+                    markup_fee = pricing.get("markupFixedFeePerKwh", 0)
+                    
+        return {
+            "markup_fixed_fee_per_kwh": markup_fee
+        }
