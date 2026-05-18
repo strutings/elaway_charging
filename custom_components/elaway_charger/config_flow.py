@@ -45,7 +45,7 @@ class ElawayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Required("ampeco_api_url", default="https://api.ampeco.com"): str, # Juster default hvis nødvendig
         })
 
-        return self.show_form(
+        return self.async_show_form(
             step_id="user", 
             data_schema=data_schema, 
             errors=errors
