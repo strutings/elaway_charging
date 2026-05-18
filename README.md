@@ -51,7 +51,7 @@ Velg enten automatisk installasjon via HACS (anbefalt) eller manuell installasjo
 
 Du kan legge til dette repositoriet direkte i HACS ved å klikke på knappen under:
 
-[![HACS Repository](https://my.home-assistant.io/badge/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?category=Integration&repository=https%3A%2F%2Fgithub.com%2Fstrutings%2Felaway_charger
+[![HACS Repository](https://my.home-assistant.io/redirect/hacs_repository/?owner=strutings&repository=https%3A%2F%2Fgithub.com%2Fstrutings%2Felaway_charging.git&category=integration)
 **Eller gjør det manuelt i HACS:**
 1. Åpne **HACS** i Home Assistant.
 2. Klikk på de tre prikkene øverst i høyre hjørne og velg **Custom repositories** (Egendefinerte repositorier).
