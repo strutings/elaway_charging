@@ -9,6 +9,7 @@
   "issue_tracker": "https://github.com/strutings/elaway-gateway-api/issues",
   "requirements": [
     "beautifulsoup4==4.12.3",
+    "requirements": ["aiohttp"],
   ],
   "version": "v3.1.0"
 }
