@@ -1,7 +1,7 @@
 # ⚡ Elaway Charger integration for Home Assistant
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
-![Version](https://img.shields.io/badge/Version-2.0.0-emerald.svg?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-3.2.0-emerald.svg?style=for-the-badge)
 ![Maintained](https://img.shields.io/badge/Maintained%3F-Yes-emerald.svg?style=for-the-badge)
 
 En uoffisiell Home Assistant-integrasjon for **Elaway** ladebokser som kjører på Ampeco-plattformen (for eksempel i Risvollan Borettslag). Integrasjonen gir deg full kontroll over ladingen, sanntidsdata, priser, samt start- og stoppknapper direkte i ditt smarthus.
