@@ -3,13 +3,13 @@
   "name": "Elaway EV Charger",
   "codeowners": ["@strutings"],
   "config_flow": true,
-  "documentation": "https://github.com/strutings/elaway-gateway-api",
+  "documentation": "https://github.com/strutings/elaway_charging",
   "integration_type": "hub",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/strutings/elaway-gateway-api/issues",
+  "issue_tracker": "https://github.com/strutings/elaway_charging/issues",
   "requirements": [
     "beautifulsoup4==4.12.3",
-    "requirements": ["aiohttp"],
+    "aiohttp"
   ],
-  "version": "v3.1.0"
+  "version": "3.1.1"
 }
