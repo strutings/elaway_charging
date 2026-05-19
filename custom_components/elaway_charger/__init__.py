@@ -10,7 +10,7 @@ from .const import DOMAIN
 from .api import ElawayAPI
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS = ["sensor", "button", "binary_sensor"]
+PLATFORMS = ["sensor", "button", "binary_sensor", "switch", "number"]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up the integration based on the path /personal/charge-points/"""
