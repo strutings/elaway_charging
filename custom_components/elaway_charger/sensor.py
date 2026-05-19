@@ -280,7 +280,7 @@ class ElawayFixedFeeSensor(CoordinatorEntity, SensorEntity):
 
 
 class ElawaySessionEnergySensor(CoordinatorEntity, SensorEntity):
-    """Real-time energy consumption for the current active charging session (kWh)."""
+    """Real-time energy consumption for the current active charging session (converted to kWh)."""
     def __init__(self, coordinator, entry, device_info):
         super().__init__(coordinator)
         self._attr_device_info = device_info
@@ -293,8 +293,13 @@ class ElawaySessionEnergySensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self):
-        return get_session_data(self.coordinator.data).get("energy", 0)
-
+        """Return energy in kWh (API provides Wh)."""
+        try:
+            # Henter Wh fra API og deler på 1000 for å få kWh
+            wh_value = float(get_session_data(self.coordinator.data).get("energy", 0))
+            return round(wh_value / 1000, 3)
+        except (TypeError, ValueError):
+            return 0
 
 class ElawaySessionPowerSensor(CoordinatorEntity, SensorEntity):
     """Real-time charging effect for the current active charging session (kW)."""
