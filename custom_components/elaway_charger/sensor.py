@@ -40,11 +40,13 @@ async def async_setup_entry(
         ElawaySmartChargingSensor(coordinator, entry, device_info),
         ElawayOwnerSensor(coordinator, entry, device_info),
         ElawayFixedFeeSensor(coordinator, entry, device_info),
-        # New Session Sensors
+        # Session Sensors
         ElawaySessionEnergySensor(coordinator, entry, device_info),
         ElawaySessionPowerSensor(coordinator, entry, device_info),
         ElawaySessionDurationSensor(coordinator, entry, device_info),
         ElawaySessionStateSensor(coordinator, entry, device_info),
+        ElawaySessionCostSensor(coordinator, entry, device_info),
+        ElawaySessionOfferedPowerSensor(coordinator, entry, device_info),
     ]
     
     async_add_entities(sensors, True)
@@ -276,7 +278,6 @@ class ElawayFixedFeeSensor(CoordinatorEntity, SensorEntity):
                     markup_fee = pricing.get("markupFixedFeePerKwh", 0)
         return {"markup_fixed_fee_per_kwh": markup_fee}
 
-# --- NEW SESSION SENSORS ---
 
 class ElawaySessionEnergySensor(CoordinatorEntity, SensorEntity):
     """Real-time energy consumption for the current active charging session (kWh)."""
@@ -339,3 +340,39 @@ class ElawaySessionStateSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self):
         return get_session_data(self.coordinator.data).get("chargingState", "Idle")
+
+
+class ElawaySessionCostSensor(CoordinatorEntity, SensorEntity):
+    """The current accumulated cost of the active charging session."""
+    def __init__(self, coordinator, entry, device_info):
+        super().__init__(coordinator)
+        self._attr_device_info = device_info
+        self._attr_name = "Elaway Session Cost"
+        self._attr_unique_id = f"{entry.entry_id}_session_cost"
+        self._attr_icon = "mdi:cash"
+        self._attr_state_class = SensorStateClass.TOTAL
+
+    @property
+    def native_value(self):
+        return get_session_data(self.coordinator.data).get("amount", 0)
+
+    @property
+    def native_unit_of_measurement(self):
+        session = get_session_data(self.coordinator.data)
+        return session.get("currency", {}).get("code", "NOK")
+
+
+class ElawaySessionOfferedPowerSensor(CoordinatorEntity, SensorEntity):
+    """The maximum power offered to the vehicle by the infrastructure charger (W)."""
+    def __init__(self, coordinator, entry, device_info):
+        super().__init__(coordinator)
+        self._attr_device_info = device_info
+        self._attr_name = "Elaway Session Offered Power"
+        self._attr_unique_id = f"{entry.entry_id}_session_offered_power"
+        self._attr_icon = "mdi:shield-flash-outline"
+        self._attr_native_unit_of_measurement = "W"
+        self._attr_device_class = "power"
+
+    @property
+    def native_value(self):
+        return get_session_data(self.coordinator.data).get("offeredPower", 0)
