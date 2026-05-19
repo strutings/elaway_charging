@@ -8,11 +8,11 @@ from urllib.parse import urlparse, parse_qs, urljoin
 
 _LOGGER = logging.getLogger(__name__)
 
-# Verdier hentet direkte fra din config.js og auth.ts
+# Values retrieved directly from your config.js and auth.ts
 REDIRECT_URI = "io.elaway.no.app://auth.elaway.io/ios/io.elaway.no.app/callback"
 ELAWAY_AUTH_URL = "https://auth.elaway.io/authorize"
 ELAWAY_TOKEN_URL = "https://auth.elaway.io/oauth/token"
-# Dette var den manglende brikken:
+# This was the missing piece:
 AMPECO_BASE_URL = "https://no.eu-elaway.charge.ampeco.tech/api/v1/app"
 
 class ElawayAPI:
@@ -28,36 +28,36 @@ class ElawayAPI:
         
         self.ampeco_token = None
         self.expires_at = 0
-        self.evse_id = None # Bør fylles ut av sensor.py ved første henting
+        self.evse_id = None # Should be populated by sensor.py during the first fetch
 
     async def async_get_valid_credentials(self) -> str:
-        """Hovedmetode for å hente gyldig token."""
+        """Main method to retrieve a valid token."""
         if self.ampeco_token and self.expires_at > time.time():
             return self.ampeco_token
 
         try:
             return await self._perform_login()
         except Exception as e:
-            _LOGGER.error("KRITISK FEIL I API.PY: %s", traceback.format_exc())
+            _LOGGER.error("CRITICAL ERROR IN API.PY: %s", traceback.format_exc())
             raise Exception(str(e))
 
     async def _perform_login(self):
         """
-        Gjenskaper flyten fra auth.ts.
-        Merk: Uten Puppeteer kan Auth0 blokkere forespørselen.
+        Replicates the flow from auth.ts.
+        Note: Without Puppeteer, Auth0 might block the request.
         """
-        _LOGGER.info("Starter pålogging mot Elaway/Ampeco...")
+        _LOGGER.info("Starting authentication flow against Elaway/Ampeco...")
         
         headers = {
-            "User-Agent": "insomnia/10.0.0", # Fra din auth.ts
+            "User-Agent": "insomnia/10.0.0", # From your auth.ts
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
         }
         
-        local_state = "randomstate" # Fra din auth.ts
+        local_state = "randomstate" # From your auth.ts
         
         async with aiohttp.ClientSession(headers=headers, cookie_jar=aiohttp.CookieJar(unsafe=True)) as session:
             
-            # 1. Start Auth0 sesjon
+            # 1. Initialize Auth0 session
             auth_url = (
                 f"{ELAWAY_AUTH_URL}?response_type=code"
                 f"&client_id={self.client_id}"
@@ -68,13 +68,13 @@ class ElawayAPI:
             
             async with session.get(auth_url, allow_redirects=True) as resp:
                 if resp.status != 200:
-                    raise Exception(f"Auth0 init feilet: {resp.status}")
+                    raise Exception(f"Auth0 initialization failed: {resp.status}")
                 
-                # Finn den ekte staten som Auth0 krever i POST
+                # Find the actual state string that Auth0 requires in the POST payload
                 final_url = str(resp.url)
                 actual_state = parse_qs(urlparse(final_url).query).get("state", [local_state])[0]
 
-            # 2. Post login-info
+            # 2. Post credentials
             login_url = f"https://auth.elaway.io/u/login?state={actual_state}"
             payload = {
                 "state": actual_state,
@@ -85,20 +85,20 @@ class ElawayAPI:
 
             async with session.post(login_url, data=payload, allow_redirects=False) as resp:
                 if resp.status not in (301, 302):
-                    raise Exception("Auth0 nektet pålogging. Sjekk brukernavn/passord.")
+                    raise Exception("Auth0 login rejected. Please check your username and password.")
                 
                 location = resp.headers.get("Location")
 
-            # 3. Hent autorisasjonskode fra redirect
+            # 3. Retrieve authorization code from redirect location
             if "code=" not in location:
                 async with session.get(urljoin("https://auth.elaway.io", location), allow_redirects=False) as resp:
                     location = resp.headers.get("Location", "")
 
             code = parse_qs(urlparse(location).query).get("code", [None])[0]
             if not code:
-                raise Exception("Fant ikke autorisasjonskode.")
+                raise Exception("Failed to retrieve authorization code.")
 
-            # 4. Bytt kode mot Auth0 tokens
+            # 4. Exchange code for Auth0 tokens
             async with session.post(ELAWAY_TOKEN_URL, json={
                 "grant_type": "authorization_code",
                 "client_id": self.client_id,
@@ -109,7 +109,7 @@ class ElawayAPI:
                 access_token = auth0_data.get("access_token")
                 id_token = auth0_data.get("id_token")
 
-            # 5. Bytt Auth0 tokens mot Ampeco Bearer Token (Selve Elaway-nøkkelen)
+            # 5. Exchange Auth0 tokens for Ampeco Bearer Token (The primary Elaway credential key)
             ampeco_payload = {
                 "token": json.dumps({
                     "accessToken": access_token,
@@ -126,7 +126,7 @@ class ElawayAPI:
             
             async with session.post(self.ampeco_token_url, json=ampeco_payload) as resp:
                 if resp.status != 200:
-                    raise Exception(f"Ampeco nektet token: {await resp.text()}")
+                    raise Exception(f"Ampeco rejected token parameters: {await resp.text()}")
                 
                 data = await resp.json()
                 self.ampeco_token = data.get("access_token")

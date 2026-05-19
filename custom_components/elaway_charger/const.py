@@ -1,5 +1,4 @@
-# I custom_components/elaway_charger/const.py
+# In custom_components/elaway_charger/const.py
 DOMAIN = "elaway_charger"
-PLATFORMS = ["sensor", "switch", "binary_sensor", "button"]  # Legg til "button", "number" etc. hvis du har det
-DOMENE = "elaway_charger"  # La til denne så koden din blir fornøyd!
+PLATFORMS = ["sensor", "switch", "binary_sensor", "button"]  # Add "number" etc. here if you implement them later
 NAME = "Elaway EV Charger"

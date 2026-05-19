@@ -8,32 +8,32 @@ from .api import ElawayAPI
 
 _LOGGER = logging.getLogger(__name__)
 
-# KUN de felles Ampeco-verdiene holdes hardkodet her nå
+# ONLY the shared Ampeco values are kept hardcoded here now
 HARDCODED_AMPECO_CLIENT_ID = "1"
 HARDCODED_AMPECO_URL = "https://api.elaway.io/api/v1/app"
 
-# Skjemaet krever nå brukernavn, passord, din unike Auth0-streng og secret
+# The schema now requires username, password, your unique Auth0 string, and secret
 DATA_SCHEMA = vol.Schema(
     {
         vol.Required("username"): str,
         vol.Required("password"): str,
-        vol.Required("client_id"): str,  # Tilbake i skjemaet siden den er unik for deg
+        vol.Required("client_id"): str,  # Back in the schema since it is unique to you
         vol.Required("elaway_client_secret"): str,
     }
 )
 
 class ElawayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Håndterer oppsett der unik client_id tastes inn, mens Ampeco-ID er fast."""
+    """Handles setup where a unique client_id is entered, while the Ampeco ID is static."""
 
     VERSION = 1
 
     async def async_step_user(self, user_input=None):
-        """Kjøres når brukeren legger til integrasjonen."""
+        """Runs when the user adds the integration."""
         errors = {}
 
         if user_input is not None:
             try:
-                # Kombinerer brukerens unike data med de hardkodede fellesverdiene
+                # Combines the user's unique data with the hardcoded shared values
                 api = ElawayAPI(
                     username=user_input["username"],
                     password=user_input["password"],
@@ -46,7 +46,7 @@ class ElawayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 token = await api.async_get_valid_credentials()
                 
                 if token:
-                    # Vi lagrer alt samlet så __init__.py og api.py får tak i det senere
+                    # We store everything together so __init__.py and api.py can retrieve it later
                     full_data = {
                         **user_input,
                         "elaway_client_id": HARDCODED_AMPECO_CLIENT_ID,
@@ -62,18 +62,18 @@ class ElawayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             except Exception as err:
                 err_msg = str(err).lower()
-                _LOGGER.error("Detaljert feil under Elaway-validering: %s", err)
+                _LOGGER.error("Detailed error during Elaway validation: %s", err)
                 
-                if "auth0 pålogging feilet" in err_msg or "unauthorized_client" in err_msg:
-                    errors["base"] = "Feil brukernavn, passord eller Client ID (Auth0 avviste)."
-                elif "ampeco avviste tokenet" in err_msg:
-                    errors["base"] = "Auth0 OK, men Ampeco avviste Elaway Client Secret."
-                elif "klarte ikke å hente ut 'code'" in err_msg:
-                    errors["base"] = "Kunne ikke hente sesjonskode. Sannsynligvis blokkert av Auth0 bot-skjold."
+                if "auth0 login failed" in err_msg or "unauthorized_client" in err_msg:
+                    errors["base"] = "Incorrect username, password, or Client ID (Auth0 rejected)."
+                elif "ampeco rejected the token" in err_msg:
+                    errors["base"] = "Auth0 OK, but Ampeco rejected the Elaway Client Secret."
+                elif "failed to extract 'code'" in err_msg:
+                    errors["base"] = "Could not retrieve session code. Likely blocked by Auth0 bot protection."
                 elif "cannot connect" in err_msg or "404" in err_msg:
-                    errors["base"] = "Kunne ikke kontakte Elaway-serveren."
+                    errors["base"] = "Could not contact the Elaway server."
                 else:
-                    errors["base"] = f"Feil: {str(err)}"
+                    errors["base"] = f"Error: {str(err)}"
 
         return self.async_show_form(
             step_id="user", 

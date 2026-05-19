@@ -16,14 +16,14 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Setter opp start- og stoppknapper for Elaway."""
+    """Set up start and stop buttons for Elaway."""
     entry_data = hass.data[DOMAIN][entry.entry_id]
     coordinator = entry_data["coordinator"]
     api = entry_data["api"]
 
     device_info = DeviceInfo(
         identifiers={(DOMAIN, entry.entry_id)},
-        name=f"Elaway Lader ({entry.title})",
+        name=f"Elaway Charger ({entry.title})",
         manufacturer="Eirik Skorstad",
         model="Ampeco Powered Charger",
     )
@@ -37,18 +37,18 @@ async def async_setup_entry(
 
 
 class ElawayStartButton(CoordinatorEntity, ButtonEntity):
-    """Knapp for å starte ladesesjon."""
+    """Button to start a charging session."""
 
     def __init__(self, coordinator, api, entry, device_info):
         super().__init__(coordinator)
         self.api = api
         self._attr_device_info = device_info
-        self._attr_name = "Elaway Start Lading"
+        self._attr_name = "Elaway Start Charging"
         self._attr_unique_id = f"{entry.entry_id}_start_charging_button"
         self._attr_icon = "mdi:play-circle"
 
     async def async_press(self) -> None:
-        """Sende START-kommando basert på chargerrouter.ts."""
+        """Send START command based on chargerrouter.ts."""
         try:
             token = await self.api.async_get_valid_credentials()
             url = f"{self.api.ampeco_base_url}/session/start"
@@ -56,38 +56,38 @@ class ElawayStartButton(CoordinatorEntity, ButtonEntity):
             
             payload = {"evseId": int(self.api.evse_id)}
 
-            _LOGGER.info("Sender start-kommando til Elaway via %s med evseId %s", url, self.api.evse_id)
+            _LOGGER.info("Sending start command to Elaway via %s with evseId %s", url, self.api.evse_id)
             
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, headers=headers, json=payload) as resp:
-                    # ENDRET HER: Godtar nå også 202 (Accepted) fra Ampeco
+                    # CHANGED HERE: Now also accepts 202 (Accepted) from Ampeco
                     if resp.status not in [200, 201, 202]:
                         error_text = await resp.text()
-                        _LOGGER.error("Klarte ikke å starte lading. Status: %s, Respons: %s", resp.status, error_text)
+                        _LOGGER.error("Failed to start charging. Status: %s, Response: %s", resp.status, error_text)
                         return
                     
-                    _LOGGER.info("Lading startet suksessfullt (Status %s)!", resp.status)
+                    _LOGGER.info("Charging started successfully (Status %s)!", resp.status)
                     
             await self.coordinator.async_request_refresh()
 
         except Exception as err:
-            _LOGGER.error("Feil under sending av start-kommando: %s", err)
+            _LOGGER.error("Error occurred while sending start command: %s", err)
 
 
 class ElawayStopButton(CoordinatorEntity, ButtonEntity):
-    """Knapp for å stoppe aktiv ladesesjon."""
+    """Button to stop an active charging session."""
 
     def __init__(self, coordinator, api, charger_id, entry, device_info):
         super().__init__(coordinator)
         self.api = api
         self.charger_id = charger_id
         self._attr_device_info = device_info
-        self._attr_name = "Elaway Stopp Lading"
+        self._attr_name = "Elaway Stop Charging"
         self._attr_unique_id = f"{entry.entry_id}_stop_charging_button"
         self._attr_icon = "mdi:stop-circle"
 
     async def async_press(self) -> None:
-        """Sende STOPP-kommando basert på aktiv økt-ID fra chargerrouter.ts."""
+        """Send STOP command based on active session ID from chargerrouter.ts."""
         try:
             token = await self.api.api_get_valid_credentials() if hasattr(self.api, 'api_get_valid_credentials') else await self.api.async_get_valid_credentials()
             headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
@@ -102,7 +102,7 @@ class ElawayStopButton(CoordinatorEntity, ButtonEntity):
                     current_session_id = evses[0]["session"].get("id")
 
             if not current_session_id:
-                _LOGGER.debug("Fant ingen aktiv økt i minnet, gjør live-sjekk mot laderen...")
+                _LOGGER.debug("No active session found in memory, performing live status check against charger...")
                 check_url = f"{self.api.ampeco_base_url}/personal/charge-points/{self.charger_id}"
                 async with aiohttp.ClientSession() as session:
                     async with session.get(check_url, headers=headers) as resp:
@@ -115,23 +115,23 @@ class ElawayStopButton(CoordinatorEntity, ButtonEntity):
                                     current_session_id = evses[0]["session"].get("id")
 
             if not current_session_id:
-                _LOGGER.warning("Kunne ikke stoppe lading: Fant ingen aktiv ladesesjon.")
+                _LOGGER.warning("Could not stop charging: No active charging session found.")
                 return
 
             stop_url = f"{self.api.ampeco_base_url}/session/{current_session_id}/end"
-            _LOGGER.info("Avslutter ladesesjon via %s", stop_url)
+            _LOGGER.info("Ending charging session via %s", stop_url)
             
             async with aiohttp.ClientSession() as session:
                 async with session.post(stop_url, headers=headers) as resp:
-                    # OGSÅ ENDRET HER: Godtar 200, 202 og 204 ved stopp
+                    # ALSO CHANGED HERE: Accepts 200, 202, and 204 upon stopping
                     if resp.status not in [200, 202, 204]:
                         error_text = await resp.text()
-                        _LOGGER.error("Klarte ikke å stoppe lading. Status: %s, Respons: %s", resp.status, error_text)
+                        _LOGGER.error("Failed to stop charging. Status: %s, Response: %s", resp.status, error_text)
                         return
                     
-                    _LOGGER.info("Lading stoppet suksessfullt!")
+                    _LOGGER.info("Charging stopped successfully!")
 
             await self.coordinator.async_request_refresh()
 
         except Exception as err:
-            _LOGGER.error("Feil under sending av stopp-kommando: %s", err)
+            _LOGGER.error("Error occurred while sending stop command: %s", err)

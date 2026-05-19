@@ -10,10 +10,10 @@ from .const import DOMAIN
 from .api import ElawayAPI
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS = ["sensor", "button"]
+PLATFORMS = ["sensor", "button", "binary_sensor"]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Setter opp integrasjonen basert på stien /personal/charge-points/"""
+    """Set up the integration based on the path /personal/charge-points/"""
     hass.data.setdefault(DOMAIN, {})
 
     api = ElawayAPI(
@@ -25,7 +25,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ampeco_api_url=entry.data.get("ampeco_api_url", "https://no.eu-elaway.charge.ampeco.tech/api/v1/app"),
     )
 
-    # Vi bruker ID-ene fra din JSON (22408 og 21357)
+    # Using the IDs from your JSON payload (22408 and 21357)
     CHARGER_ID = "22408"
     api.evse_id = "21357"
 
@@ -33,17 +33,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         try:
             token = await api.async_get_valid_credentials()
             
-            # Din chargerrouter.ts bruker denne spesifikke stien:
+            # Your chargerrouter.ts uses this specific path:
             url = f"{api.ampeco_base_url}/personal/charge-points/{CHARGER_ID}"
             headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
             
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, headers=headers) as resp:
                     if resp.status != 200:
-                        raise UpdateFailed(f"API feilet med status {resp.status} på {url}")
+                        raise UpdateFailed(f"API failed with status {resp.status} at {url}")
                     return await resp.json()
         except Exception as err:
-            raise UpdateFailed(f"Klarte ikke å kontakte Elaway: {err}") from err
+            raise UpdateFailed(f"Failed to communicate with Elaway: {err}") from err
 
     coordinator = DataUpdateCoordinator(
         hass,
@@ -56,7 +56,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     try:
         await coordinator.async_config_entry_first_refresh()
     except Exception as ex:
-        raise ConfigEntryNotReady(f"Klarte ikke å koble til Elaway: {ex}") from ex
+        raise ConfigEntryNotReady(f"Could not connect to Elaway during first refresh: {ex}") from ex
 
     hass.data[DOMAIN][entry.entry_id] = {
         "api": api,
@@ -67,6 +67,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload Elaway integration config entry platforms."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id)

@@ -4,91 +4,84 @@
 ![Version](https://img.shields.io/badge/Version-3.2.0-emerald.svg?style=for-the-badge)
 ![Maintained](https://img.shields.io/badge/Maintained%3F-Yes-emerald.svg?style=for-the-badge)
 
-En uoffisiell Home Assistant-integrasjon for **Elaway** ladebokser som kjører på Ampeco-plattformen (for eksempel i Risvollan Borettslag). Integrasjonen gir deg full kontroll over ladingen, sanntidsdata, priser, samt start- og stoppknapper direkte i ditt smarthus.
+An unofficial Home Assistant integration for **Elaway** charging stations running on the Ampeco platform. This integration provides full control over charging, real-time data, and a suite of diagnostic sensors.
 
-Distribuert og vedlikeholdt av **Eirik Skorstad**.
-
----
-
-## ✨ Funksjoner
-
-Integrasjonen oppretter en enhet i Home Assistant (**Ampeco Powered Charger av Eirik Skorstad**) med følgende enheter:
-
-*   **Styring:** Start- og Stopp-knapper skreddersydd for Ampeco-sesjoner.
-*   **Sensorer:**
-    *   `Elaway Ladestatus` (preparing, charging, available, etc.)
-    *   `Elaway Boks Status` (tilkobling til skyen)
-    *   `Elaway Maks Ladeeffekt` (kW) & `Maks Strømstyrke` (A)
-    *   `Elaway Ladepris` (Henter gjeldende kWh-pris satt av borettslaget, f.eks. NOK/kWh)
-    *   `Elaway Fast Oppstartsavgift` (Viser eventuell startavgift/connection fee, samt tariffpåslag som attributt)
-    *   `Elaway Forbruk Forrige Måned` (kWt)
-    *   `Elaway Firmware Versjon` & `Registrert Eier`
+Distributed and maintained by **Eirik Skorstad**.
 
 ---
 
-## 🔑 Slik henter du ut API-legitimasjon (Client Secret osv.)
+## ✨ Features
 
-For å sette opp integrasjonen trenger du tilgangstegn (credentials) fra Elaway-appen. Siden Elaway bruker Ampeco i bakgrunnen, kan du fange opp disse ved å logge inn på Elaway sin webportal eller bruke utviklerverktøyet i nettleseren din:
+The integration creates a unified device in Home Assistant (**Ampeco Powered Charger by Eirik Skorstad**) containing the following entities:
 
-1. Åpne **Google Chrome** eller **Edge** og logg inn på Elaway sin ladeportal (eller borettslagets ladeside).
-2. Trykk på `F12` på tastaturet ditt (eller høyreklikk og velg **Inspiser**) for å åpne Utviklerverktøy.
-3. Gå til fanen **Network** (Nettverk).
-4. Forfrisk siden (`F5`).
-5. I søkefeltet under Network-fanen, søk etter `/user` eller `login`.
-6. Klikk på en av forespørslene (requests) som dukker opp, og se under **Headers** eller **Response**.
-7. Let etter følgende verdier som du må lime inn under oppsettet i Home Assistant:
-    *   `client_id` / `elaway_client_id`
-    *   `elaway_client_secret`
-    *   `ampeco_api_url` *(Standard er satt til `https://no.eu-elaway.charge.ampeco.tech/api/v1/app`)*
-
----
-
-## 🚀 Installasjon
-
-Velg enten automatisk installasjon via HACS (anbefalt) eller manuell installasjon.
-
-### Metode 1: Automatisk via HACS (Anbefalt)
-
-Du kan legge til dette repositoriet direkte i HACS ved å klikke på knappen under:
-
-[![HACS Repository](https://my.home-assistant.io/redirect/hacs_repository/?owner=strutings&repository=https%3A%2F%2Fgithub.com%2Fstrutings%2Felaway_charging.git&category=integration)
-**Eller gjør det manuelt i HACS:**
-1. Åpne **HACS** i Home Assistant.
-2. Klikk på de tre prikkene øverst i høyre hjørne og velg **Custom repositories** (Egendefinerte repositorier).
-3. Lim inn URL-en til dette GitHub-repositoriet.
-4. Velg **Integration** som kategori, og klikk **Add**.
-5. Finn integrasjonen i HACS-listen, klikk **Download**, og start Home Assistant på nytt.
+* **Controls:**
+    * `Start Charging` / `Stop Charging` buttons tailored for Ampeco sessions.
+* **Binary Sensors:**
+    * `Charger Status` (Connectivity/Online status)
+    * `Cable Connected` (Detection of EV plug)
+    * `Authentication Required` (Lock status)
+* **Telemetry Sensors:**
+    * `Charging Status` (Preparing, charging, available, etc.)
+    * `Max Charging Power` (kW) & `Max Current` (A)
+    * `Charging Price` (Real-time kWh price set by property manager)
+    * `Connection Fixed Fee` (Session start fee with tariff markup attributes)
+    * `Energy Last Month` (kWh)
+    * `Firmware Version` & `Registered Owner`
 
 ---
 
-### Metode 2: Manuell installasjon
+## 🔑 How to retrieve API Credentials
 
-Hvis du ikke bruker HACS, kan du installere filene manuelt:
+To set up the integration, you need credentials from the Elaway web portal. 
 
-1. Last ned dette repositoriet som en `.zip`-fil fra GitHub.
-2. Pakk ut filen og finn mappen `custom_components/elaway_charger`.
-3. Bruk Samba, SSH eller File Editor til å laste opp mappen `elaway_charger` til din Home Assistant-installasjon under:
+1.  Log in to the Elaway charging portal in **Chrome** or **Edge**.
+2.  Press `F12` to open Developer Tools and go to the **Network** tab.
+3.  Refresh the page (`F5`).
+4.  Search for `/user` or `login` in the filter box.
+5.  Check the **Headers** or **Response** for:
+    * `client_id` (Your unique Auth0 string)
+    * `elaway_client_secret`
+    * `ampeco_api_url` *(Usually `https://no.eu-elaway.charge.ampeco.tech/api/v1/app`)*
+
+---
+
+## 🚀 Installation
+
+### Method 1: Automatic via HACS (Recommended)
+
+Click the button below to add this repository to your HACS instance:
+
+[![Open your Home Assistant instance and open a repository maintainer's website.](https://my.home-assistant.io/badge/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=strutings&repository=elaway_charging&category=integration)
+
+**Or add manually in HACS:**
+1. Open **HACS** -> Three dots (top right) -> **Custom repositories**.
+2. Paste the URL of this GitHub repository.
+3. Select **Integration** as category and click **Add**.
+
+---
+
+### Method 2: Manual Installation
+
+1. Download the repository and extract the `.zip`.
+2. Upload the `elaway_charger` folder to your Home Assistant installation:
    `└── /config/custom_components/elaway_charger/`
-4. Sjekk at mappen inneholder alle nødvendige filer (`__init__.py`, `sensor.py`, `button.py`, `manifest.json`, osv.).
-5. **Start Home Assistant på nytt.**
+3. **Restart Home Assistant.**
 
 ---
 
-## ⚙️ Konfigurering
+## ⚙️ Configuration
 
-Etter installasjon og omstart, aktiverer du integrasjonen i brukergrensesnittet:
-
-1. Gå til **Innstillinger** -> **Enheter og tjenester**.
-2. Klikk på **+ Legg til integrasjon** nederst til høyre.
-3. Søk etter `Elaway Charger` og velg den.
-4. Skriv inn ditt brukernavn, passord og API-detaljene du fant i steget [🔑 Slik henter du ut API-legitimasjon](#-slik-henter-du-ut-api-legitimasjon-client-secret-osv).
-5. Klikk **Send inn**. Enheten din vil nå dukke opp under enheter med navnet `Ampeco Powered Charger av Eirik Skorstad`.
+1. Go to **Settings** -> **Devices & Services**.
+2. Click **+ Add Integration**.
+3. Search for `Elaway Charger`.
+4. Enter your username, password, and the API credentials retrieved in the previous steps.
+5. Click **Submit**.
 
 ---
 
-## 🛠️ Feilsøking og Loggføring
+## 🛠️ Troubleshooting
 
-Hvis start/stopp-knappene eller sensorene ikke oppdaterer seg, kan du aktivere utvidet feilsøking i din `configuration.yaml` for å se nøyaktig hva Ampeco-API-et svarer:
+To enable debug logging, add the following to your `configuration.yaml`:
 
 ```yaml
 logger:

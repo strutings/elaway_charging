@@ -1,0 +1,77 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Konfigurer Elaway-lader",
+        "description": "Skriv inn din Elaway/Ampeco-kontoinformasjon nedenfor for å koble til ladeboksen din.",
+        "data": {
+          "username": "Brukernavn (E-post)",
+          "password": "Passord",
+          "client_id": "Auth0 Client ID (Unik streng)",
+          "elaway_client_secret": "Elaway Client Secret"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Ugyldig legitimasjon eller Client ID.",
+      "cannot_connect": "Kunne ikke kontakte Elaway-serveren.",
+      "unknown": "Uventet feil oppstod under valideringen."
+    },
+    "abort": {
+      "already_configured": "Denne Elaway-kontoen er allerede konfigurert."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "cable_connected": {
+        "name": "Ladekabel tilkoblet"
+      },
+      "auth_required": {
+        "name": "Autentisering kreves"
+      },
+      "charger_status": {
+        "name": "Boksstatus"
+      }
+    },
+    "sensor": {
+      "evse_status_sensor": {
+        "name": "Ladestatus"
+      },
+      "max_power_sensor": {
+        "name": "Maks ladeeffekt"
+      },
+      "max_current_sensor": {
+        "name": "Maks strømstyrke"
+      },
+      "tariff_price_sensor": {
+        "name": "Ladepris"
+      },
+      "tariff_name_sensor": {
+        "name": "Tariffnavn"
+      },
+      "last_month_energy_sensor": {
+        "name": "Forbruk forrige måned"
+      },
+      "firmware_sensor": {
+        "name": "Firmware-versjon"
+      },
+      "smart_charging_sensor": {
+        "name": "Smartlading aktiv"
+      },
+      "owner_sensor": {
+        "name": "Registrert eier"
+      },
+      "fixed_fee_sensor": {
+        "name": "Fast oppstartsavgift"
+      }
+    },
+    "button": {
+      "start_charging_button": {
+        "name": "Start lading"
+      },
+      "stop_charging_button": {
+        "name": "Stopp lading"
+      }
+    }
+  }
+}

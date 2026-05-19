@@ -1,15 +1,11 @@
 {
   "domain": "elaway_charger",
-  "name": "Elaway EV Charger",
-  "codeowners": ["@strutings"],
+  "name": "Elaway Charger",
+  "codeowners": [],
   "config_flow": true,
-  "documentation": "https://github.com/strutings/elaway_charging",
-  "integration_type": "hub",
+  "documentation": "https://github.com/yourusername/elaway_charger",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/strutings/elaway_charging/issues",
-  "requirements": [
-    "beautifulsoup4==4.12.3",
-    "aiohttp"
-  ],
-  "version": "3.2.0"
+  "issue_tracker": "https://github.com/yourusername/elaway_charger/issues",
+  "requirements": ["aiohttp>=3.9.0"],
+  "version": "3.4.0"
 }

@@ -1,3 +1,6 @@
+"""Set up Elaway sensors based on active API data."""
+from __future__ import annotations
+
 import logging
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
@@ -15,20 +18,19 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Setter opp Elaway-sensorer basert på faktiske API-data."""
+    """Set up Elaway telemetry and text sensors based on coordinator data."""
     entry_data = hass.data[DOMAIN][entry.entry_id]
     coordinator = entry_data["coordinator"]
 
     device_info = DeviceInfo(
         identifiers={(DOMAIN, entry.entry_id)},
-        name=f"Elaway Lader ({entry.title})",
+        name=f"Elaway Charger ({entry.title})",
         manufacturer="Eirik Skorstad",
         model="Ampeco Powered Charger",
     )
 
-    # Her oppretter vi alle sensorene dine uten duplikater i koden
+    # Generated list without duplicate box state entries managed by binary_sensor.py
     sensors = [
-        ElawayStatusSensor(coordinator, entry, device_info),
         ElawayEvseStatusSensor(coordinator, entry, device_info),
         ElawayMaxPowerSensor(coordinator, entry, device_info),
         ElawayMaxCurrentSensor(coordinator, entry, device_info),
@@ -38,43 +40,30 @@ async def async_setup_entry(
         ElawayFirmwareSensor(coordinator, entry, device_info),
         ElawaySmartChargingSensor(coordinator, entry, device_info),
         ElawayOwnerSensor(coordinator, entry, device_info),
+        ElawayFixedFeeSensor(coordinator, entry, device_info),
     ]
     
     async_add_entities(sensors, True)
 
 
 def get_root_data(coordinator_data):
-    """Hjelper for å hente ut rot-data-objektet trygt."""
+    """Helper method to safely pull the root data dictionary payload object."""
     if not coordinator_data:
         return {}
     if isinstance(coordinator_data, dict):
-        # Sjekker om dataene ligger inni en "data"-nøkkel eller i roten direkte
+        # Check if the properties are embedded in an inner payload envelope or directly in the root
         return coordinator_data.get("data", coordinator_data)
     elif isinstance(coordinator_data, list) and len(coordinator_data) > 0:
         return coordinator_data[0]
     return {}
 
 
-class ElawayStatusSensor(CoordinatorEntity, SensorEntity):
-    """Hovedstatus for ladeboksen (f.eks. available)."""
-    def __init__(self, coordinator, entry, device_info):
-        super().__init__(coordinator)
-        self._attr_device_info = device_info
-        self._attr_name = "Elaway Boks Status"
-        self._attr_unique_id = f"{entry.entry_id}_box_status_sensor"
-        self._attr_icon = "mdi:cloud-check"
-
-    @property
-    def native_value(self):
-        return get_root_data(self.coordinator.data).get("status", "Ukjent")
-
-
 class ElawayEvseStatusSensor(CoordinatorEntity, SensorEntity):
-    """Spesifikk status for selve ladeuttaket (f.eks. preparing, charging)."""
+    """Specific state for the charging socket outlet itself (e.g., preparing, charging)."""
     def __init__(self, coordinator, entry, device_info):
         super().__init__(coordinator)
         self._attr_device_info = device_info
-        self._attr_name = "Elaway Ladestatus"
+        self._attr_name = "Elaway Charging Status"
         self._attr_unique_id = f"{entry.entry_id}_evse_status_sensor"
         self._attr_icon = "mdi:ev-station"
 
@@ -83,16 +72,16 @@ class ElawayEvseStatusSensor(CoordinatorEntity, SensorEntity):
         data = get_root_data(self.coordinator.data)
         evses = data.get("evses", [])
         if evses and isinstance(evses, list):
-            return evses[0].get("status", "Ukjent")
-        return "Ukjent"
+            return evses[0].get("status", "Unknown")
+        return "Unknown"
 
 
 class ElawayMaxPowerSensor(CoordinatorEntity, SensorEntity):
-    """Maksimal tillatt ladeeffekt satt av systemet (kW)."""
+    """Maximum allowable charging effect/limit set by the infrastructure management loop (kW)."""
     def __init__(self, coordinator, entry, device_info):
         super().__init__(coordinator)
         self._attr_device_info = device_info
-        self._attr_name = "Elaway Maks Ladeeffekt"
+        self._attr_name = "Elaway Max Charging Power"
         self._attr_unique_id = f"{entry.entry_id}_max_power_sensor"
         self._attr_icon = "mdi:lightning-bolt"
         self._attr_native_unit_of_measurement = "kW"
@@ -108,11 +97,11 @@ class ElawayMaxPowerSensor(CoordinatorEntity, SensorEntity):
 
 
 class ElawayMaxCurrentSensor(CoordinatorEntity, SensorEntity):
-    """Maksimal tillatt strømstyrke (A)."""
+    """Maximum current constraints configuration allowance value (A)."""
     def __init__(self, coordinator, entry, device_info):
         super().__init__(coordinator)
         self._attr_device_info = device_info
-        self._attr_name = "Elaway Maks Strømstyrke"
+        self._attr_name = "Elaway Max Current"
         self._attr_unique_id = f"{entry.entry_id}_max_current_sensor"
         self._attr_icon = "mdi:current-ac"
         self._attr_native_unit_of_measurement = "A"
@@ -127,11 +116,11 @@ class ElawayMaxCurrentSensor(CoordinatorEntity, SensorEntity):
 
 
 class ElawayTariffPriceSensor(CoordinatorEntity, SensorEntity):
-    """Gjeldende strømpris per kWh satt av borettslaget (inkl. valuta)."""
+    """Current electricity cost rate tracking per kWh applied by housing association property parameters."""
     def __init__(self, coordinator, entry, device_info):
         super().__init__(coordinator)
         self._attr_device_info = device_info
-        self._attr_name = "Elaway Ladepris"
+        self._attr_name = "Elaway Charging Price"
         self._attr_unique_id = f"{entry.entry_id}_tariff_price_sensor"
         self._attr_icon = "mdi:cash-100"
 
@@ -146,15 +135,15 @@ class ElawayTariffPriceSensor(CoordinatorEntity, SensorEntity):
             currency = tariff.get("currency", "NOK") if isinstance(tariff, dict) else "NOK"
             if price is not None:
                 return f"{price} {currency}/kWh"
-        return "Ukjent"
+        return "Unknown"
 
 
 class ElawayTariffNameSensor(CoordinatorEntity, SensorEntity):
-    """Navnet på tariffen/avtalen som er aktiv på laderen."""
+    """The title/identifier of the active rate contract plan loaded into the station."""
     def __init__(self, coordinator, entry, device_info):
         super().__init__(coordinator)
         self._attr_device_info = device_info
-        self._attr_name = "Elaway Tariffnavn"
+        self._attr_name = "Elaway Tariff Name"
         self._attr_unique_id = f"{entry.entry_id}_tariff_name_sensor"
         self._attr_icon = "mdi:file-sign"
 
@@ -165,16 +154,16 @@ class ElawayTariffNameSensor(CoordinatorEntity, SensorEntity):
         if evses and isinstance(evses, list):
             tariff = evses[0].get("tariff", {})
             if isinstance(tariff, dict):
-                return tariff.get("name", "Ukjent")
-        return "Ukjent"
+                return tariff.get("name", "Unknown")
+        return "Unknown"
 
 
 class ElawayLastMonthEnergySensor(CoordinatorEntity, SensorEntity):
-    """Strømforbruk forrige måned (kWh)."""
+    """Total cumulative electricity consumption consumed during previous calendar month cycle interval (kWh)."""
     def __init__(self, coordinator, entry, device_info):
         super().__init__(coordinator)
         self._attr_device_info = device_info
-        self._attr_name = "Elaway Forbruk Forrige Måned"
+        self._attr_name = "Elaway Energy Last Month"
         self._attr_unique_id = f"{entry.entry_id}_last_month_energy_sensor"
         self._attr_icon = "mdi:calendar-month"
         self._attr_native_unit_of_measurement = "kWh"
@@ -190,58 +179,60 @@ class ElawayLastMonthEnergySensor(CoordinatorEntity, SensorEntity):
 
 
 class ElawayFirmwareSensor(CoordinatorEntity, SensorEntity):
-    """Firmware-versjon installert på ladeboksen."""
+    """Active software/firmware build reference version string currently active within device system hardware."""
     def __init__(self, coordinator, entry, device_info):
         super().__init__(coordinator)
         self._attr_device_info = device_info
-        self._attr_name = "Elaway Firmware Versjon"
+        self._attr_name = "Elaway Firmware Version"
         self._attr_unique_id = f"{entry.entry_id}_firmware_sensor"
         self._attr_icon = "mdi:update"
 
     @property
     def native_value(self):
-        return get_root_data(self.coordinator.data).get("firmware_version", "Ukjent")
+        return get_root_data(self.coordinator.data).get("firmware_version", "Unknown")
 
 
 class ElawaySmartChargingSensor(CoordinatorEntity, SensorEntity):
-    """Viser om smartlading (tidsplan) er aktivert i appen."""
+    """Evaluates whether charging automation calendar profiles are handled actively inside the user software account app."""
     def __init__(self, coordinator, entry, device_info):
         super().__init__(coordinator)
         self._attr_device_info = device_info
-        self._attr_name = "Elaway Smartlading Aktiv"
+        self._attr_name = "Elaway Smart Charging Active"
         self._attr_unique_id = f"{entry.entry_id}_smart_charging_sensor"
         self._attr_icon = "mdi:brain"
 
     @property
     def native_value(self):
         is_enabled = get_root_data(self.coordinator.data).get("smart_charging_enabled", False)
-        return "Ja" if is_enabled else "Nei"
+        return "Yes" if is_enabled else "No"
 
 
 class ElawayOwnerSensor(CoordinatorEntity, SensorEntity):
-    """Registrert eier av ladeboksen."""
+    """Profile display information tracking account owner values associated with this hardware asset node entry."""
     def __init__(self, coordinator, entry, device_info):
         super().__init__(coordinator)
         self._attr_device_info = device_info
-        self._attr_name = "Elaway Registrert Eier"
+        self._attr_name = "Elaway Registered Owner"
         self._attr_unique_id = f"{entry.entry_id}_owner_sensor"
         self._attr_icon = "mdi:account"
 
     @property
     def native_value(self):
-        return get_root_data(self.coordinator.data).get("ownerName", "Ukjent")
+        return get_root_data(self.coordinator.data).get("ownerName", "Unknown")
+
+
 class ElawayFixedFeeSensor(CoordinatorEntity, SensorEntity):
-    """Viser fast oppstartsavgift for ladesesjonen (Connection Fee)."""
+    """Tracks initial access connection fixed fees required per session instantiation cycle."""
     def __init__(self, coordinator, entry, device_info):
         super().__init__(coordinator)
         self._attr_device_info = device_info
-        self._attr_name = "Elaway Fast Oppstartsavgift"
+        self._attr_name = "Elaway Connection Fixed Fee"
         self._attr_unique_id = f"{entry.entry_id}_fixed_fee_sensor"
         self._attr_icon = "mdi:cash-marker"
 
     @property
     def native_value(self):
-        """Henter ut connectionFee (f.eks. 0)."""
+        """Fetches the session connection fee baseline rate variables."""
         data = get_root_data(self.coordinator.data)
         evses = data.get("evses", [])
         if evses and isinstance(evses, list):
@@ -254,7 +245,7 @@ class ElawayFixedFeeSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_unit_of_measurement(self):
-        """Henter valutaen dynamisk (f.eks. NOK)."""
+        """Resolves target currency tags contextually from metadata tracking arrays."""
         data = get_root_data(self.coordinator.data)
         evses = data.get("evses", [])
         if evses and isinstance(evses, list):
@@ -265,7 +256,7 @@ class ElawayFixedFeeSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self):
-        """Legger til det faste kWh-påslaget som et ekstra attributt."""
+        """Appends the consumption incremental fixed fee markup value directly into entity property parameters attributes."""
         data = get_root_data(self.coordinator.data)
         evses = data.get("evses", [])
         markup_fee = 0
