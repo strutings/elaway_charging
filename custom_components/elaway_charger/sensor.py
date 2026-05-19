@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -29,7 +29,6 @@ async def async_setup_entry(
         model="Ampeco Powered Charger",
     )
 
-    # Generated list without duplicate box state entries managed by binary_sensor.py
     sensors = [
         ElawayEvseStatusSensor(coordinator, entry, device_info),
         ElawayMaxPowerSensor(coordinator, entry, device_info),
@@ -41,6 +40,11 @@ async def async_setup_entry(
         ElawaySmartChargingSensor(coordinator, entry, device_info),
         ElawayOwnerSensor(coordinator, entry, device_info),
         ElawayFixedFeeSensor(coordinator, entry, device_info),
+        # New Session Sensors
+        ElawaySessionEnergySensor(coordinator, entry, device_info),
+        ElawaySessionPowerSensor(coordinator, entry, device_info),
+        ElawaySessionDurationSensor(coordinator, entry, device_info),
+        ElawaySessionStateSensor(coordinator, entry, device_info),
     ]
     
     async_add_entities(sensors, True)
@@ -51,10 +55,17 @@ def get_root_data(coordinator_data):
     if not coordinator_data:
         return {}
     if isinstance(coordinator_data, dict):
-        # Check if the properties are embedded in an inner payload envelope or directly in the root
         return coordinator_data.get("data", coordinator_data)
     elif isinstance(coordinator_data, list) and len(coordinator_data) > 0:
         return coordinator_data[0]
+    return {}
+
+def get_session_data(coordinator_data):
+    """Helper to safely extract the active session object from the first EVSE."""
+    data = get_root_data(coordinator_data)
+    evses = data.get("evses", [])
+    if evses and isinstance(evses, list):
+        return evses[0].get("session", {})
     return {}
 
 
@@ -232,7 +243,6 @@ class ElawayFixedFeeSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self):
-        """Fetches the session connection fee baseline rate variables."""
         data = get_root_data(self.coordinator.data)
         evses = data.get("evses", [])
         if evses and isinstance(evses, list):
@@ -245,7 +255,6 @@ class ElawayFixedFeeSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_unit_of_measurement(self):
-        """Resolves target currency tags contextually from metadata tracking arrays."""
         data = get_root_data(self.coordinator.data)
         evses = data.get("evses", [])
         if evses and isinstance(evses, list):
@@ -256,18 +265,77 @@ class ElawayFixedFeeSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self):
-        """Appends the consumption incremental fixed fee markup value directly into entity property parameters attributes."""
         data = get_root_data(self.coordinator.data)
         evses = data.get("evses", [])
         markup_fee = 0
-        
         if evses and isinstance(evses, list):
             tariff = evses[0].get("tariff", {})
             if isinstance(tariff, dict):
                 pricing = tariff.get("pricing", {})
                 if isinstance(pricing, dict):
                     markup_fee = pricing.get("markupFixedFeePerKwh", 0)
-                    
-        return {
-            "markup_fixed_fee_per_kwh": markup_fee
-        }
+        return {"markup_fixed_fee_per_kwh": markup_fee}
+
+# --- NEW SESSION SENSORS ---
+
+class ElawaySessionEnergySensor(CoordinatorEntity, SensorEntity):
+    """Real-time energy consumption for the current active charging session (kWh)."""
+    def __init__(self, coordinator, entry, device_info):
+        super().__init__(coordinator)
+        self._attr_device_info = device_info
+        self._attr_name = "Elaway Session Energy"
+        self._attr_unique_id = f"{entry.entry_id}_session_energy"
+        self._attr_icon = "mdi:lightning-bolt"
+        self._attr_native_unit_of_measurement = "kWh"
+        self._attr_device_class = "energy"
+        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+
+    @property
+    def native_value(self):
+        return get_session_data(self.coordinator.data).get("energy", 0)
+
+
+class ElawaySessionPowerSensor(CoordinatorEntity, SensorEntity):
+    """Real-time charging effect for the current active charging session (kW)."""
+    def __init__(self, coordinator, entry, device_info):
+        super().__init__(coordinator)
+        self._attr_device_info = device_info
+        self._attr_name = "Elaway Session Power"
+        self._attr_unique_id = f"{entry.entry_id}_session_power"
+        self._attr_icon = "mdi:flash"
+        self._attr_native_unit_of_measurement = "kW"
+        self._attr_device_class = "power"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self):
+        return get_session_data(self.coordinator.data).get("power", 0)
+
+
+class ElawaySessionDurationSensor(CoordinatorEntity, SensorEntity):
+    """Current active charging session duration in minutes."""
+    def __init__(self, coordinator, entry, device_info):
+        super().__init__(coordinator)
+        self._attr_device_info = device_info
+        self._attr_name = "Elaway Session Duration"
+        self._attr_unique_id = f"{entry.entry_id}_session_duration"
+        self._attr_icon = "mdi:timer-outline"
+        self._attr_native_unit_of_measurement = "min"
+
+    @property
+    def native_value(self):
+        return get_session_data(self.coordinator.data).get("duration", 0)
+
+
+class ElawaySessionStateSensor(CoordinatorEntity, SensorEntity):
+    """Granular charging state from the session object (e.g., suspendedEVSE)."""
+    def __init__(self, coordinator, entry, device_info):
+        super().__init__(coordinator)
+        self._attr_device_info = device_info
+        self._attr_name = "Elaway Session State"
+        self._attr_unique_id = f"{entry.entry_id}_session_state"
+        self._attr_icon = "mdi:information-outline"
+
+    @property
+    def native_value(self):
+        return get_session_data(self.coordinator.data).get("chargingState", "Idle")
