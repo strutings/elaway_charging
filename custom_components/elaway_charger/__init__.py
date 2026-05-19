@@ -1,6 +1,9 @@
-import logging
+"""The Elaway Charging integration."""
+from __future__ import annotations
+
 from datetime import timedelta
 import aiohttp
+import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
@@ -13,9 +16,10 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS = ["sensor", "button", "binary_sensor", "switch", "number"]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up the integration based on the path /personal/charge-points/"""
+    """Set up Elaway from a config entry."""
     hass.data.setdefault(DOMAIN, {})
 
+    # Initialiser API-klienten
     api = ElawayAPI(
         username=entry.data.get("username") or entry.data.get("username_email"),
         password=entry.data.get("password"),
@@ -25,7 +29,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ampeco_api_url=entry.data.get("ampeco_api_url", "https://no.eu-elaway.charge.ampeco.tech/api/v1/app"),
     )
 
-    # Using the IDs from your JSON payload (22408 and 21357)
+    # Hardkodede referanser for lader og EVSE
     CHARGER_ID = "22408"
     api.evse_id = "21357"
 
@@ -33,7 +37,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         try:
             token = await api.async_get_valid_credentials()
             
-            # Your chargerrouter.ts uses this specific path:
+            # Bruker den spesifikke ruten for personlige ladere
             url = f"{api.ampeco_base_url}/personal/charge-points/{CHARGER_ID}"
             headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
             
@@ -58,6 +62,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except Exception as ex:
         raise ConfigEntryNotReady(f"Could not connect to Elaway during first refresh: {ex}") from ex
 
+    # Lagrer både api og coordinator slik at switch.py og number.py finner dem
     hass.data[DOMAIN][entry.entry_id] = {
         "api": api,
         "coordinator": coordinator

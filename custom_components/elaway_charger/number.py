@@ -18,9 +18,10 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up Elaway number entities based on coordinator data."""
+    """Set up Elaway number entities based on coordinator and api data."""
     entry_data = hass.data[DOMAIN][entry.entry_id]
     coordinator = entry_data["coordinator"]
+    api = entry_data["api"]  # Hent api-objektet
 
     device_info = DeviceInfo(
         identifiers={(DOMAIN, entry.entry_id)},
@@ -34,12 +35,12 @@ async def async_setup_entry(
     
     if root_data.get("is_light_intensity_supported", False):
         async_add_entities([
-            ElawayLightIntensityNumber(coordinator, entry, device_info)
+            ElawayLightIntensityNumber(coordinator, api, entry.entry_id, device_info)
         ], True)
 
 
 def get_root_data(coordinator) -> dict:
-    """Helper method to safely pull and unpack root payload contexts while auto-extracting EVSE ID strings."""
+    """Helper method to safely pull and unpack root payload contexts."""
     if not coordinator or not coordinator.data:
         return {}
     
@@ -49,11 +50,6 @@ def get_root_data(coordinator) -> dict:
     if isinstance(data, list) and len(data) > 0:
         root_data = data[0]
 
-    if root_data and hasattr(coordinator, "api") and coordinator.api.get("evse_id") is None:
-        evse_uid = root_data.get("id") or root_data.get("evses", [{}])[0].get("id")
-        if evse_uid:
-            coordinator.api.evse_id = str(evse_uid)
-
     return root_data
 
 
@@ -62,12 +58,13 @@ class ElawayLightIntensityNumber(CoordinatorEntity, NumberEntity):
 
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator, entry, device_info):
+    def __init__(self, coordinator, api, entry_id, device_info):
         """Initialize the light intensity config selector."""
         super().__init__(coordinator)
+        self.api = api  # Lagre api lokalt
         self._attr_device_info = device_info
         self._attr_name = "Status Light Intensity"
-        self._attr_unique_id = f"{entry.entry_id}_light_intensity"
+        self._attr_unique_id = f"{entry_id}_light_intensity"
         self._attr_icon = "mdi:brightness-6"
         
         self._attr_native_min_value = 1.0
@@ -89,11 +86,8 @@ class ElawayLightIntensityNumber(CoordinatorEntity, NumberEntity):
         _LOGGER.debug("Sending command to shift status illumination tier target to: %s", intensity_target)
         
         try:
-            await self.coordinator.api.async_patch_settings({"light_intensity": intensity_target})
-            root_data = get_root_data(self.coordinator)
-            if root_data:
-                root_data["light_intensity"] = intensity_target
-            self.async_write_ha_state()
+            # Bruk self.api i stedet for self.coordinator.api
+            await self.api.async_patch_settings({"light_intensity": intensity_target})
             await self.coordinator.async_request_refresh()
             
         except Exception as err:
