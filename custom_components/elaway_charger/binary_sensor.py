@@ -22,7 +22,6 @@ async def async_setup_entry(
     entry_data = hass.data[DOMAIN][entry.entry_id]
     coordinator = entry_data["coordinator"]
     
-    # We construct the identical device wrapper object used in sensor.py and button.py
     device_info = DeviceInfo(
         identifiers={(DOMAIN, entry.entry_id)},
         name=f"Elaway Charger ({entry.title})",
@@ -31,20 +30,23 @@ async def async_setup_entry(
     )
     
     binary_sensors = [
-        # Sensor 1: Cable Connection State
+        # Sensor 1: Cable Connection State (Safely checking the session dictionary)
         ElawayBinarySensor(
             coordinator, entry, "cable_connected", "Cable Connected", BinarySensorDeviceClass.PLUG,
-            lambda d: d['data']['evses'][0]['session']['isCableConnected'], device_info
+            lambda d: d.get('data', d).get('evses', [{}])[0].get('session', {}).get('isCableConnected', False) 
+            if d.get('data', d).get('evses', [{}])[0].get('session') is not None else False, 
+            device_info
         ),
         # Sensor 2: Authorization State Requirement
         ElawayBinarySensor(
             coordinator, entry, "auth_required", "Authentication Required", None,
-            lambda d: d['data']['evses'][0]['auth_required'], device_info, icon="mdi:lock"
+            lambda d: d.get('data', d).get('requires_authorization', False), device_info, icon="mdi:lock"
         ),
-        # Sensor 3: Network Connection Status (Online / Offline)
+        # Sensor 3: Network Connection Status (Online / Offline mapped from API states)
         ElawayBinarySensor(
             coordinator, entry, "charger_status", "Charger Status", BinarySensorDeviceClass.CONNECTIVITY,
-            lambda d: d['data']['status'].lower() == "online", device_info
+            lambda d: str(d.get('data', d).get('status', '')).lower() in ["available", "charging", "preparing", "finishing", "reserved"], 
+            device_info
         ),
     ]
     
