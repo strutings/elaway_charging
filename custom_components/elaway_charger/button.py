@@ -135,3 +135,41 @@ class ElawayStopButton(CoordinatorEntity, ButtonEntity):
 
         except Exception as err:
             _LOGGER.error("Error occurred while sending stop command: %s", err)
+
+class ElawayRebootButton(CoordinatorEntity, ButtonEntity):
+    """Button to trigger a remote hardware reboot of the Elaway charging station."""
+
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator, api, entry_id, device_info):
+        """Initialize the reboot action button."""
+        super().__init__(coordinator)
+        self.api = api
+        self._attr_device_info = device_info
+        self._attr_name = "Restart Charger"
+        self._attr_unique_id = f"{entry_id}_reboot_button"
+        self._attr_icon = "mdi:restart"
+        self._attr_device_class = "restart"
+
+    async def async_press(self) -> None:
+        """Trigger the reboot sequence over the API."""
+        charger_id = get_charger_id(self.coordinator)
+        _LOGGER.debug("Initiating remote reboot sequence for charger: %s", charger_id)
+
+        try:
+            token = await self.api.async_get_valid_credentials()
+            url = f"{self.api.ampeco_base_url}/personal/charge-points/{charger_id}/reboot"
+            headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json={}) as resp:
+                    if resp.status not in [200, 201, 202, 204]:
+                        error_msg = await resp.text()
+                        _LOGGER.error("Reboot command rejected by Ampeco (%s): %s", resp.status, error_msg)
+                        return
+
+            _LOGGER.info("Reboot command successfully dispatched to charger %s", charger_id)
+            await self.coordinator.async_request_refresh()
+
+        except Exception as err:
+            _LOGGER.error("Failed to execute remote hardware reboot sequence: %s", err)
