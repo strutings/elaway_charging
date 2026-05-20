@@ -32,9 +32,14 @@ async def async_setup_entry(
         model="Ampeco Powered Charger",
     )
 
+    # Fallback charger ID if not found in data
+    FALLBACK_CHARGER_ID = "22408"
+
     async_add_entities([
-        ElawayCableLockSwitch(coordinator, api, entry.entry_id, device_info),
-        ElawayFreeChargingSwitch(coordinator, api, entry.entry_id, device_info),
+        ElawayCableLockSwitch(coordinator, api, entry.entry_id, FALLBACK_CHARGER_ID, device_info),
+        ElawayFreeChargingSwitch(coordinator, api, entry.entry_id, FALLBACK_CHARGER_ID, device_info),
+        ElawayPlugAndChargeSwitch(coordinator, api, entry.entry_id, FALLBACK_CHARGER_ID, device_info),
+        ElawaySmartChargingSwitch(coordinator, api, entry.entry_id, FALLBACK_CHARGER_ID, device_info),
     ], True)
 
 
@@ -49,37 +54,15 @@ def get_root_data(coordinator) -> dict:
     return root_data
 
 
-async def _send_ampeco_patch(api, charger_id: str, payload_dict: dict) -> bool:
-    """Helper to send PATCH directly to the charge point."""
-    try:
-        token = await api.async_get_valid_credentials()
-        url = f"{api.ampeco_base_url}/personal/charge-points/{charger_id}"
-        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-        
-        _LOGGER.debug("Sender PATCH: URL=%s | Payload=%s", url, payload_dict)
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.patch(url, headers=headers, json=payload_dict) as resp:
-                if resp.status not in [200, 204]:
-                    error_msg = await resp.text()
-                    _LOGGER.error("Ampeco PATCH feilet med status (%s): %s", resp.status, error_msg)
-                    return False
-                
-                _LOGGER.debug("Ampeco PATCH suksess (Status %s)", resp.status)
-                return True
-    except Exception as e:
-        _LOGGER.error("Krasj under sending av PATCH: %s", e)
-        return False
-
-
 class ElawayCableLockSwitch(CoordinatorEntity, SwitchEntity):
     """Switch to permanently lock or unlock the charging cable to the station."""
 
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator, api, entry_id, device_info):
+    def __init__(self, coordinator, api, entry_id, fallback_charger_id, device_info):
         super().__init__(coordinator)
         self.api = api
+        self.fallback_charger_id = fallback_charger_id
         self._attr_device_info = device_info
         self._attr_name = "Permanent Cable Lock"
         self._attr_unique_id = f"{entry_id}_cable_lock"
@@ -90,19 +73,13 @@ class ElawayCableLockSwitch(CoordinatorEntity, SwitchEntity):
         return bool(get_root_data(self.coordinator).get("connector_lock", False))
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        charger_id = get_root_data(self.coordinator).get("id")
-        if not charger_id:
-            return
-
-        if await _send_ampeco_patch(self.api, str(charger_id), {"connector_lock": True}):
+        charger_id = get_root_data(self.coordinator).get("id") or self.fallback_charger_id
+        if await self.api.async_patch_charger(str(charger_id), {"connector_lock": True}):
             await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        charger_id = get_root_data(self.coordinator).get("id")
-        if not charger_id:
-            return
-
-        if await _send_ampeco_patch(self.api, str(charger_id), {"connector_lock": False}):
+        charger_id = get_root_data(self.coordinator).get("id") or self.fallback_charger_id
+        if await self.api.async_patch_charger(str(charger_id), {"connector_lock": False}):
             await self.coordinator.async_request_refresh()
 
 
@@ -111,9 +88,10 @@ class ElawayFreeChargingSwitch(CoordinatorEntity, SwitchEntity):
 
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator, api, entry_id, device_info):
+    def __init__(self, coordinator, api, entry_id, fallback_charger_id, device_info):
         super().__init__(coordinator)
         self.api = api
+        self.fallback_charger_id = fallback_charger_id
         self._attr_device_info = device_info
         self._attr_name = "Authentication Required"
         self._attr_unique_id = f"{entry_id}_free_charging"
@@ -124,17 +102,77 @@ class ElawayFreeChargingSwitch(CoordinatorEntity, SwitchEntity):
         return bool(get_root_data(self.coordinator).get("requires_authorization", True))
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        charger_id = get_root_data(self.coordinator).get("id")
-        if not charger_id:
-            return
-
-        if await _send_ampeco_patch(self.api, str(charger_id), {"requires_authorization": True}):
+        charger_id = get_root_data(self.coordinator).get("id") or self.fallback_charger_id
+        if await self.api.async_patch_charger(str(charger_id), {"requires_authorization": True}):
             await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        charger_id = get_root_data(self.coordinator).get("id")
-        if not charger_id:
-            return
+        charger_id = get_root_data(self.coordinator).get("id") or self.fallback_charger_id
+        if await self.api.async_patch_charger(str(charger_id), {"requires_authorization": False}):
+            await self.coordinator.async_request_refresh()
 
-        if await _send_ampeco_patch(self.api, str(charger_id), {"requires_authorization": False}):
+
+class ElawayPlugAndChargeSwitch(CoordinatorEntity, SwitchEntity):
+    """Switch to enable/disable Plug & Charge."""
+
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator, api, entry_id, fallback_charger_id, device_info):
+        super().__init__(coordinator)
+        self.api = api
+        self.fallback_charger_id = fallback_charger_id
+        self._attr_device_info = device_info
+        self._attr_name = "Plug & Charge"
+        self._attr_unique_id = f"{entry_id}_plug_and_charge"
+        self._attr_icon = "mdi:ev-plug-type2"
+
+    @property
+    def is_on(self) -> bool:
+        return bool(get_root_data(self.coordinator).get("plug_and_charge", False))
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        charger_id = get_root_data(self.coordinator).get("id") or self.fallback_charger_id
+        if await self.api.async_patch_charger(str(charger_id), {"plug_and_charge": True}):
+            await self.coordinator.async_request_refresh()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        charger_id = get_root_data(self.coordinator).get("id") or self.fallback_charger_id
+        if await self.api.async_patch_charger(str(charger_id), {"plug_and_charge": False}):
+            await self.coordinator.async_request_refresh()
+
+
+class ElawaySmartChargingSwitch(CoordinatorEntity, SwitchEntity):
+    """Switch to enable/disable Smart Charging."""
+
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator, api, entry_id, fallback_charger_id, device_info):
+        super().__init__(coordinator)
+        self.api = api
+        self.fallback_charger_id = fallback_charger_id
+        self._attr_device_info = device_info
+        self._attr_name = "Smart Charging"
+        self._attr_unique_id = f"{entry_id}_smart_charging"
+        self._attr_icon = "mdi:auto-fix"
+
+    @property
+    def is_on(self) -> bool:
+        return bool(get_root_data(self.coordinator).get("smart_charging_enabled", False))
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        charger_id = get_root_data(self.coordinator).get("id") or self.fallback_charger_id
+        payload = {
+            "smart_charging_enabled": True,
+            "smart_charging": {"enabled": True}
+        }
+        if await self.api.async_patch_charger(str(charger_id), payload):
+            await self.coordinator.async_request_refresh()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        charger_id = get_root_data(self.coordinator).get("id") or self.fallback_charger_id
+        payload = {
+            "smart_charging_enabled": False,
+            "smart_charging": {"enabled": False}
+        }
+        if await self.api.async_patch_charger(str(charger_id), payload):
             await self.coordinator.async_request_refresh()

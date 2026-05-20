@@ -33,12 +33,17 @@ async def async_setup_entry(
 
     root_data = get_root_data(coordinator)
     
+    # Fallback charger ID if not found in data
+    FALLBACK_CHARGER_ID = "22408"
+
     entities: list[NumberEntity] = [
-        ElawayMaxCurrentNumber(coordinator, api, entry.entry_id, device_info)
+        ElawayMaxCurrentNumber(coordinator, api, entry.entry_id, FALLBACK_CHARGER_ID, device_info),
+        ElawaySmartChargingTargetNumber(coordinator, api, entry.entry_id, FALLBACK_CHARGER_ID, device_info),
+        ElawaySolarMinPowerNumber(coordinator, api, entry.entry_id, FALLBACK_CHARGER_ID, device_info)
     ]
     
     if root_data.get("is_light_intensity_supported", False):
-        entities.append(ElawayLightIntensityNumber(coordinator, api, entry.entry_id, device_info))
+        entities.append(ElawayLightIntensityNumber(coordinator, api, entry.entry_id, FALLBACK_CHARGER_ID, device_info))
 
     async_add_entities(entities, True)
 
@@ -54,37 +59,15 @@ def get_root_data(coordinator) -> dict:
     return root_data
 
 
-async def _send_ampeco_patch(api, charger_id: str, payload_dict: dict) -> bool:
-    """Helper to send PATCH directly to the charge point."""
-    try:
-        token = await api.async_get_valid_credentials()
-        url = f"{api.ampeco_base_url}/personal/charge-points/{charger_id}"
-        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-        
-        _LOGGER.debug("Sender PATCH: URL=%s | Payload=%s", url, payload_dict)
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.patch(url, headers=headers, json=payload_dict) as resp:
-                if resp.status not in [200, 204]:
-                    error_msg = await resp.text()
-                    _LOGGER.error("Ampeco PATCH feilet med status (%s): %s", resp.status, error_msg)
-                    return False
-                
-                _LOGGER.debug("Ampeco PATCH suksess (Status %s)", resp.status)
-                return True
-    except Exception as e:
-        _LOGGER.error("Krasj under sending av PATCH: %s", e)
-        return False
-
-
 class ElawayMaxCurrentNumber(CoordinatorEntity, NumberEntity):
     """Representation of a number entity to control Elaway charger maximum current limit."""
 
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator, api, entry_id, device_info):
+    def __init__(self, coordinator, api, entry_id, fallback_charger_id, device_info):
         super().__init__(coordinator)
         self.api = api
+        self.fallback_charger_id = fallback_charger_id
         self._attr_device_info = device_info
         self._attr_name = "Max Charging Current"
         self._attr_unique_id = f"{entry_id}_max_current"
@@ -116,11 +99,8 @@ class ElawayMaxCurrentNumber(CoordinatorEntity, NumberEntity):
             return 32.0
 
     async def async_set_native_value(self, value: float) -> None:
-        charger_id = get_root_data(self.coordinator).get("id")
-        if not charger_id:
-            return
-
-        if await _send_ampeco_patch(self.api, str(charger_id), {"max_current_a": int(value)}):
+        charger_id = get_root_data(self.coordinator).get("id") or self.fallback_charger_id
+        if await self.api.async_patch_charger(str(charger_id), {"max_current_a": int(value)}):
             await self.coordinator.async_request_refresh()
 
 
@@ -129,9 +109,10 @@ class ElawayLightIntensityNumber(CoordinatorEntity, NumberEntity):
 
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator, api, entry_id, device_info):
+    def __init__(self, coordinator, api, entry_id, fallback_charger_id, device_info):
         super().__init__(coordinator)
         self.api = api
+        self.fallback_charger_id = fallback_charger_id
         self._attr_device_info = device_info
         self._attr_name = "Status Light Intensity"
         self._attr_unique_id = f"{entry_id}_light_intensity"
@@ -153,12 +134,79 @@ class ElawayLightIntensityNumber(CoordinatorEntity, NumberEntity):
             return 5.0
 
     async def async_set_native_value(self, value: float) -> None:
-        charger_id = get_root_data(self.coordinator).get("id")
-        if not charger_id:
-            return
-
+        charger_id = get_root_data(self.coordinator).get("id") or self.fallback_charger_id
         # Mapper slider-verdi (1-5) direkte til Ampecos prosent-skala (20-100)
         api_target = int(value) * 20
+        if await self.api.async_patch_charger(str(charger_id), {"light_intensity": api_target}):
+            await self.coordinator.async_request_refresh()
 
-        if await _send_ampeco_patch(self.api, str(charger_id), {"light_intensity": api_target}):
+
+class ElawaySmartChargingTargetNumber(CoordinatorEntity, NumberEntity):
+    """Control the minimum energy target for smart charging sessions (kWh)."""
+
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator, api, entry_id, fallback_charger_id, device_info):
+        super().__init__(coordinator)
+        self.api = api
+        self.fallback_charger_id = fallback_charger_id
+        self._attr_device_info = device_info
+        self._attr_name = "Smart Charging Target"
+        self._attr_unique_id = f"{entry_id}_smart_target_kwh"
+        self._attr_icon = "mdi:battery-charging-100"
+        self._attr_native_unit_of_measurement = "kWh"
+        self._attr_native_step = 1.0
+        self._attr_native_min_value = 1.0
+        self._attr_native_max_value = 100.0
+
+    @property
+    def native_value(self) -> float | None:
+        smart_charging = get_root_data(self.coordinator).get("smart_charging", {})
+        if isinstance(smart_charging, dict):
+            target = smart_charging.get("target_charge", {})
+            if isinstance(target, dict):
+                val = target.get("min_kwh")
+                return float(val) if val is not None else 5.0
+        return 5.0
+
+    async def async_set_native_value(self, value: float) -> None:
+        charger_id = get_root_data(self.coordinator).get("id") or self.fallback_charger_id
+        payload = {
+            "smart_charging": {
+                "target_charge": {"min_kwh": str(int(value))}
+            }
+        }
+        if await self.api.async_patch_charger(str(charger_id), payload):
+            await self.coordinator.async_request_refresh()
+
+
+class ElawaySolarMinPowerNumber(CoordinatorEntity, NumberEntity):
+    """Control the minimum solar power required for solar-based charging (kW)."""
+
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator, api, entry_id, fallback_charger_id, device_info):
+        super().__init__(coordinator)
+        self.api = api
+        self.fallback_charger_id = fallback_charger_id
+        self._attr_device_info = device_info
+        self._attr_name = "Min Solar Power"
+        self._attr_unique_id = f"{entry_id}_min_solar_kw"
+        self._attr_icon = "mdi:solar-power"
+        self._attr_native_unit_of_measurement = "kW"
+        self._attr_native_step = 0.1
+        self._attr_native_min_value = 0.0
+        self._attr_native_max_value = 22.0
+
+    @property
+    def native_value(self) -> float | None:
+        try:
+            val = get_root_data(self.coordinator).get("allowed_solar_min_power_kw")
+            return float(val) if val is not None else 2.0
+        except (TypeError, ValueError):
+            return 2.0
+
+    async def async_set_native_value(self, value: float) -> None:
+        charger_id = get_root_data(self.coordinator).get("id") or self.fallback_charger_id
+        if await self.api.async_patch_charger(str(charger_id), {"allowed_solar_min_power_kw": value}):
             await self.coordinator.async_request_refresh()

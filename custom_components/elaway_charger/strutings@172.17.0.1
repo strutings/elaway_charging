@@ -7,6 +7,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import DOMAIN
 
@@ -73,6 +74,7 @@ class ElawayStartButton(CoordinatorEntity, ButtonEntity):
     async def async_press(self) -> None:
         """Send START command to Ampeco."""
         try:
+            # Try to get EVSE ID from coordinator data
             evse = get_first_evse(self.coordinator.data)
             evse_id = evse.get("id") or self.api.evse_id
             
@@ -80,8 +82,24 @@ class ElawayStartButton(CoordinatorEntity, ButtonEntity):
                 _LOGGER.error("Cannot start charging: No EVSE ID found.")
                 return
 
-            if await self.api.async_start_session(evse_id):
-                await self.coordinator.async_request_refresh()
+            token = await self.api.async_get_valid_credentials()
+            url = f"{self.api.ampeco_base_url}/session/start"
+            headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+            
+            payload = {"evseId": int(evse_id)}
+
+            _LOGGER.info("Sending start command to Elaway via %s with evseId %s", url, evse_id)
+            
+            session = async_get_clientsession(self.hass)
+            async with session.post(url, headers=headers, json=payload) as resp:
+                if resp.status not in [200, 201, 202]:
+                    error_text = await resp.text()
+                    _LOGGER.error("Failed to start charging. Status: %s, Response: %s", resp.status, error_text)
+                    return
+                
+                _LOGGER.info("Charging started successfully (Status %s)!", resp.status)
+                    
+            await self.coordinator.async_request_refresh()
 
         except Exception as err:
             _LOGGER.error("Error occurred while sending start command: %s", err)
@@ -102,19 +120,42 @@ class ElawayStopButton(CoordinatorEntity, ButtonEntity):
     async def async_press(self) -> None:
         """Send STOP command based on active session ID."""
         try:
+            token = await self.api.async_get_valid_credentials()
+            headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+            
             evse = get_first_evse(self.coordinator.data)
             current_session_id = evse.get("session", {}).get("id") if evse.get("session") else None
 
             if not current_session_id:
-                _LOGGER.debug("No active session found in memory, attempting to find session from API...")
-                # The api.async_stop_session currently requires a session_id.
-                # If we don't have it, we might need a more complex lookup.
-                # For now, let's just log it.
-                _LOGGER.warning("Could not stop charging: No active charging session ID found.")
+                _LOGGER.debug("No active session found in memory, performing live status check against charger...")
+                root_data = get_root_data(self.coordinator.data)
+                charger_id = root_data.get("id") or self.fallback_charger_id
+                
+                check_url = f"{self.api.ampeco_base_url}/personal/charge-points/{charger_id}"
+                session = async_get_clientsession(self.hass)
+                async with session.get(check_url, headers=headers) as resp:
+                    if resp.status == 200:
+                        live_data = await resp.json()
+                        live_evse = get_first_evse(live_data)
+                        current_session_id = live_evse.get("session", {}).get("id") if live_evse.get("session") else None
+
+            if not current_session_id:
+                _LOGGER.warning("Could not stop charging: No active charging session found.")
                 return
 
-            if await self.api.async_stop_session(current_session_id):
-                await self.coordinator.async_request_refresh()
+            stop_url = f"{self.api.ampeco_base_url}/session/{current_session_id}/end"
+            _LOGGER.info("Ending charging session via %s", stop_url)
+            
+            session = async_get_clientsession(self.hass)
+            async with session.post(stop_url, headers=headers) as resp:
+                if resp.status not in [200, 202, 204]:
+                    error_text = await resp.text()
+                    _LOGGER.error("Failed to stop charging. Status: %s, Response: %s", resp.status, error_text)
+                    return
+                
+                _LOGGER.info("Charging stopped successfully!")
+
+            await self.coordinator.async_request_refresh()
 
         except Exception as err:
             _LOGGER.error("Error occurred while sending stop command: %s", err)
@@ -140,7 +181,20 @@ class ElawayRebootButton(CoordinatorEntity, ButtonEntity):
             root_data = get_root_data(self.coordinator.data)
             charger_id = root_data.get("id") or self.fallback_charger_id
             
-            if await self.api.async_reboot_charger(charger_id):
-                await self.coordinator.async_request_refresh()
+            token = await self.api.async_get_valid_credentials()
+            url = f"{self.api.ampeco_base_url}/personal/charge-points/{charger_id}/reboot"
+            headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+            _LOGGER.info("Sending reboot command to charger %s via %s", charger_id, url)
+            
+            session = async_get_clientsession(self.hass)
+            async with session.post(url, headers=headers, json={}) as resp:
+                if resp.status in [200, 201, 202, 204]:
+                    _LOGGER.info("Reboot command sent successfully.")
+                else:
+                    error_text = await resp.text()
+                    _LOGGER.error("Failed to reboot charger. Status: %s, Response: %s", resp.status, error_text)
+                    
+            await self.coordinator.async_request_refresh()
         except Exception as err:
             _LOGGER.error("Error during reboot: %s", err)

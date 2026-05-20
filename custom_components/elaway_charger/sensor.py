@@ -38,6 +38,14 @@ async def async_setup_entry(
         ElawayLastMonthEnergySensor(coordinator, entry, device_info),
         ElawayFirmwareSensor(coordinator, entry, device_info),
         ElawaySmartChargingSensor(coordinator, entry, device_info),
+        ElawayPlugAndChargeSensor(coordinator, entry, device_info),
+        ElawaySolarMinPowerSensor(coordinator, entry, device_info),
+        ElawaySmartChargingModeSensor(coordinator, entry, device_info),
+        ElawayOfferedPowerSensor(coordinator, entry, device_info),
+        ElawayAvailablePowerSensor(coordinator, entry, device_info),
+        ElawaySubscriptionActiveSensor(coordinator, entry, device_info),
+        ElawayLastMonthCostSensor(coordinator, entry, device_info),
+        ElawayElectricityTaxSensor(coordinator, entry, device_info),
         ElawayOwnerSensor(coordinator, entry, device_info),
         ElawayFixedFeeSensor(coordinator, entry, device_info),
         # Session Sensors
@@ -220,6 +228,170 @@ class ElawaySmartChargingSensor(CoordinatorEntity, SensorEntity):
         return "Yes" if is_enabled else "No"
 
 
+class ElawayPlugAndChargeSensor(CoordinatorEntity, SensorEntity):
+    """Diagnostic sensor for Plug & Charge status."""
+    def __init__(self, coordinator, entry, device_info):
+        super().__init__(coordinator)
+        self._attr_device_info = device_info
+        self._attr_name = "Elaway Plug & Charge Active"
+        self._attr_unique_id = f"{entry.entry_id}_plug_and_charge_sensor"
+        self._attr_icon = "mdi:ev-plug-type2"
+
+    @property
+    def native_value(self):
+        is_enabled = get_root_data(self.coordinator.data).get("plug_and_charge", False)
+        return "Yes" if is_enabled else "No"
+
+
+class ElawaySolarMinPowerSensor(CoordinatorEntity, SensorEntity):
+    """Minimum solar power required for solar-based charging (kW)."""
+    def __init__(self, coordinator, entry, device_info):
+        super().__init__(coordinator)
+        self._attr_device_info = device_info
+        self._attr_name = "Elaway Min Solar Power"
+        self._attr_unique_id = f"{entry.entry_id}_solar_min_power"
+        self._attr_icon = "mdi:solar-power"
+        self._attr_native_unit_of_measurement = "kW"
+
+    @property
+    def native_value(self):
+        return get_root_data(self.coordinator.data).get("allowed_solar_min_power_kw")
+
+
+class ElawaySmartChargingTargetKwhSensor(CoordinatorEntity, SensorEntity):
+    """The minimum energy target for smart charging sessions (kWh)."""
+    def __init__(self, coordinator, entry, device_info):
+        super().__init__(coordinator)
+        self._attr_device_info = device_info
+        self._attr_name = "Elaway Smart Charging Target"
+        self._attr_unique_id = f"{entry.entry_id}_smart_charging_target"
+        self._attr_icon = "mdi:battery-charging-100"
+        self._attr_native_unit_of_measurement = "kWh"
+
+    @property
+    def native_value(self):
+        smart_charging = get_root_data(self.coordinator.data).get("smart_charging", {})
+        if isinstance(smart_charging, dict):
+            target = smart_charging.get("target_charge", {})
+            if isinstance(target, dict):
+                return target.get("min_kwh")
+        return None
+
+
+class ElawaySubscriptionActiveSensor(CoordinatorEntity, SensorEntity):
+    """Indicates if the account owner has an active charging subscription."""
+    def __init__(self, coordinator, entry, device_info):
+        super().__init__(coordinator)
+        self._attr_device_info = device_info
+        self._attr_name = "Elaway Subscription Active"
+        self._attr_unique_id = f"{entry.entry_id}_subscription_active"
+        self._attr_icon = "mdi:card-account-details-outline"
+
+    @property
+    def native_value(self):
+        is_active = get_root_data(self.coordinator.data).get("ownerHasActiveSubscription", False)
+        return "Yes" if is_active else "No"
+
+
+class ElawaySmartChargingModeSensor(CoordinatorEntity, SensorEntity):
+    """Indicates the current mode of the smart charging system (e.g., schedule)."""
+    def __init__(self, coordinator, entry, device_info):
+        super().__init__(coordinator)
+        self._attr_device_info = device_info
+        self._attr_name = "Elaway Smart Charging Mode"
+        self._attr_unique_id = f"{entry.entry_id}_smart_charging_mode"
+        self._attr_icon = "mdi:cog-sync"
+
+    @property
+    def native_value(self):
+        smart_charging = get_root_data(self.coordinator.data).get("smart_charging", {})
+        if isinstance(smart_charging, dict):
+            return smart_charging.get("mode", "Unknown")
+        return "Unknown"
+
+
+class ElawayOfferedPowerSensor(CoordinatorEntity, SensorEntity):
+    """Real-time charging effect currently offered to the vehicle by the infrastructure (kW)."""
+    def __init__(self, coordinator, entry, device_info):
+        super().__init__(coordinator)
+        self._attr_device_info = device_info
+        self._attr_name = "Elaway Offered Charging Power"
+        self._attr_unique_id = f"{entry.entry_id}_offered_power_sensor"
+        self._attr_icon = "mdi:lightning-bolt"
+        self._attr_native_unit_of_measurement = "kW"
+        self._attr_device_class = "power"
+
+    @property
+    def native_value(self):
+        try:
+            # Henter offeredPower fra session i første EVSE og konverterer fra W til kW
+            data = get_root_data(self.coordinator.data)
+            evses = data.get("evses", [])
+            if evses and isinstance(evses, list):
+                val = evses[0].get("session", {}).get("offeredPower")
+                return round(float(val) / 1000, 2) if val is not None else 0.0
+        except Exception:
+            return 0.0
+        return 0.0
+
+
+class ElawayAvailablePowerSensor(CoordinatorEntity, SensorEntity):
+    """The absolute maximum power limit currently permitted by the housing association infrastructure (kW)."""
+    def __init__(self, coordinator, entry, device_info):
+        super().__init__(coordinator)
+        self._attr_device_info = device_info
+        self._attr_name = "Elaway Infrastructure Available Power"
+        self._attr_unique_id = f"{entry.entry_id}_available_power_sensor"
+        self._attr_icon = "mdi:transmission-tower"
+        self._attr_native_unit_of_measurement = "kW"
+        self._attr_device_class = "power"
+
+    @property
+    def native_value(self):
+        try:
+            val = get_root_data(self.coordinator.data).get("allowed_max_power_kw")
+            return float(val) if val is not None else 0.0
+        except Exception:
+            return 0.0
+
+
+class ElawayLastMonthCostSensor(CoordinatorEntity, SensorEntity):
+    """Total electricity cost for the previous calendar month cycle."""
+    def __init__(self, coordinator, entry, device_info):
+        super().__init__(coordinator)
+        self._attr_device_info = device_info
+        self._attr_name = "Elaway Cost Last Month"
+        self._attr_unique_id = f"{entry.entry_id}_last_month_cost"
+        self._attr_icon = "mdi:cash-clock"
+
+    @property
+    def native_value(self):
+        try:
+            val = get_root_data(self.coordinator.data).get("last_month_electricity_cost")
+            return float(val) if val is not None else 0.0
+        except Exception:
+            return 0.0
+
+    @property
+    def native_unit_of_measurement(self):
+        return "NOK"
+
+
+class ElawayElectricityTaxSensor(CoordinatorEntity, SensorEntity):
+    """The electricity tax percentage applied to the charging costs."""
+    def __init__(self, coordinator, entry, device_info):
+        super().__init__(coordinator)
+        self._attr_device_info = device_info
+        self._attr_name = "Elaway Electricity Tax"
+        self._attr_unique_id = f"{entry.entry_id}_electricity_tax"
+        self._attr_icon = "mdi:percent"
+        self._attr_native_unit_of_measurement = "%"
+
+    @property
+    def native_value(self):
+        return get_root_data(self.coordinator.data).get("electricity_cost_tax_percent")
+
+
 class ElawayOwnerSensor(CoordinatorEntity, SensorEntity):
     """Profile display information tracking account owner values associated with this hardware asset node entry."""
     def __init__(self, coordinator, entry, device_info):
@@ -315,7 +487,12 @@ class ElawaySessionPowerSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self):
-        return get_session_data(self.coordinator.data).get("power", 0)
+        """Return power in kW (API provides W)."""
+        try:
+            val = get_session_data(self.coordinator.data).get("power", 0)
+            return round(float(val) / 1000, 2) if val is not None else 0.0
+        except (TypeError, ValueError):
+            return 0.0
 
 
 class ElawaySessionDurationSensor(CoordinatorEntity, SensorEntity):
@@ -375,9 +552,14 @@ class ElawaySessionOfferedPowerSensor(CoordinatorEntity, SensorEntity):
         self._attr_name = "Elaway Session Offered Power"
         self._attr_unique_id = f"{entry.entry_id}_session_offered_power"
         self._attr_icon = "mdi:shield-flash-outline"
-        self._attr_native_unit_of_measurement = "W"
+        self._attr_native_unit_of_measurement = "kW"
         self._attr_device_class = "power"
 
     @property
     def native_value(self):
-        return get_session_data(self.coordinator.data).get("offeredPower", 0)
+        """Return offered power in kW (API provides W)."""
+        try:
+            val = get_session_data(self.coordinator.data).get("offeredPower", 0)
+            return round(float(val) / 1000, 2) if val is not None else 0.0
+        except (TypeError, ValueError):
+            return 0.0

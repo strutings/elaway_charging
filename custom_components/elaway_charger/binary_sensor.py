@@ -30,37 +30,61 @@ async def async_setup_entry(
     )
     
     binary_sensors = [
-        # Sensor 1: Cable Connection State (Safely checking the session dictionary)
+        # Sensor 1: Cable Connection State (Based on EVSE status)
         ElawayBinarySensor(
             coordinator, entry, "cable_connected", "Cable Connected", BinarySensorDeviceClass.PLUG,
-            lambda d: d.get('data', d).get('evses', [{}])[0].get('session', {}).get('isCableConnected', False) 
-            if d.get('data', d).get('evses', [{}])[0].get('session') is not None else False, 
+            lambda d: get_first_evse(d).get('status') in ["preparing", "charging", "suspendedEV", "suspendedEVSE", "finishing"], 
             device_info
         ),
         # Sensor 2: Authorization State Requirement
         ElawayBinarySensor(
             coordinator, entry, "auth_required", "Authentication Required", None,
-            lambda d: d.get('data', d).get('requires_authorization', False), device_info, icon="mdi:lock"
+            lambda d: get_root_data(d).get('requires_authorization', False), device_info, icon="mdi:lock"
         ),
-        # Sensor 3: Network Connection Status (Online / Offline mapped from API states)
+        # Sensor 3: Network Connection Status
         ElawayBinarySensor(
             coordinator, entry, "charger_status", "Charger Status", BinarySensorDeviceClass.CONNECTIVITY,
-            lambda d: str(d.get('data', d).get('status', '')).lower() in ["available", "charging", "preparing", "finishing", "reserved"], 
+            lambda d: get_root_data(d).get('status') != "unavailable", 
             device_info
+        ),
+        # Sensor 4: Rebooting status
+        ElawayBinarySensor(
+            coordinator, entry, "is_rebooting", "Is Rebooting", None,
+            lambda d: get_root_data(d).get('is_rebooting', False), device_info, icon="mdi:restart"
+        ),
+        # Sensor 5: Firmware updating status
+        ElawayBinarySensor(
+            coordinator, entry, "is_firmware_updating", "Is Firmware Updating", BinarySensorDeviceClass.UPDATE,
+            lambda d: get_root_data(d).get('is_firmware_updating', False), device_info
         ),
     ]
     
     async_add_entities(binary_sensors, True)
 
 
+def get_root_data(coordinator_data):
+    """Helper method to safely pull the root data dictionary payload object."""
+    if not coordinator_data:
+        return {}
+    if isinstance(coordinator_data, dict):
+        return coordinator_data.get("data", coordinator_data)
+    elif isinstance(coordinator_data, list) and len(coordinator_data) > 0:
+        return coordinator_data[0]
+    return {}
+
+
+def get_first_evse(coordinator_data):
+    """Helper to safely extract the first EVSE object."""
+    return get_root_data(coordinator_data).get("evses", [{}])[0]
+
+
 class ElawayBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Representation of an Elaway Binary Sensor tied to the core device identifier."""
 
-    # Tells Home Assistant to automatically prepend the Device name cleanly in the UI registry layout loop
     _attr_has_entity_name = True
 
     def __init__(self, coordinator, entry, key, name, device_class, value_fn, device_info, icon=None):
-        """Initialize the binary sensor integration block structure."""
+        """Initialize the binary sensor."""
         super().__init__(coordinator)
         self._key = key
         self._attr_name = name
@@ -75,7 +99,7 @@ class ElawayBinarySensor(CoordinatorEntity, BinarySensorEntity):
 
     @property
     def is_on(self) -> bool | None:
-        """Return True if the binary sensor is active/on contextually based on lambda data parsers."""
+        """Return True if the binary sensor is active/on."""
         if not self.coordinator or not self.coordinator.data:
             return None
         try:

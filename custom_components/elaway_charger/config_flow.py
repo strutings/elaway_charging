@@ -10,7 +10,7 @@ _LOGGER = logging.getLogger(__name__)
 
 # ONLY the shared Ampeco values are kept hardcoded here now
 HARDCODED_AMPECO_CLIENT_ID = "1"
-HARDCODED_AMPECO_URL = "https://api.elaway.io/api/v1/app"
+HARDCODED_AMPECO_URL = "https://no.eu-elaway.charge.ampeco.tech/api/v1/app"
 
 # The schema now requires username, password, your unique Auth0 string, and secret
 DATA_SCHEMA = vol.Schema(

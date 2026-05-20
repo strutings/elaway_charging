@@ -26,7 +26,12 @@ class ElawayAPI:
         self.elaway_client_id = elaway_client_id # Ampeco Client ID
         self.elaway_client_secret = elaway_client_secret # Ampeco Secret
         
-        self.ampeco_base_url = AMPECO_BASE_URL
+        # Override old, broken URL if it comes from an existing config entry
+        if ampeco_api_url == "https://api.elaway.io/api/v1/app":
+            self.ampeco_base_url = AMPECO_BASE_URL
+        else:
+            self.ampeco_base_url = ampeco_api_url or AMPECO_BASE_URL
+        
         self.ampeco_token_url = f"{self.ampeco_base_url}/oauth/token"
         
         self.ampeco_token = None
@@ -132,6 +137,76 @@ class ElawayAPI:
                 self.expires_at = time.time() + data.get("expires_in", 3600)
                 
                 return self.ampeco_token
+
+    async def async_patch_charger(self, charger_id: str, payload: dict) -> bool:
+        """Patch settings on a specific charge point."""
+        token = await self.async_get_valid_credentials()
+        url = f"{self.ampeco_base_url}/personal/charge-points/{charger_id}"
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        
+        _LOGGER.info("Sending PATCH to %s with payload: %s", url, payload)
+        async with aiohttp.ClientSession() as session:
+            async with session.patch(url, headers=headers, json=payload) as resp:
+                response_text = await resp.text()
+                if resp.status in [200, 204]:
+                    _LOGGER.info("Ampeco PATCH successful (Status %s). Response: %s", resp.status, response_text)
+                    return True
+                
+                _LOGGER.error("Ampeco PATCH failed (Status %s) for charger %s: %s", resp.status, charger_id, response_text)
+                return False
+
+    async def async_reboot_charger(self, charger_id: str) -> bool:
+        """Send reboot command to a specific charge point."""
+        token = await self.async_get_valid_credentials()
+        url = f"{self.ampeco_base_url}/personal/charge-points/{charger_id}/reboot"
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        
+        _LOGGER.info("Sending reboot command to charger %s via %s", charger_id, url)
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json={}) as resp:
+                if resp.status in [200, 201, 202, 204]:
+                    _LOGGER.info("Reboot command sent successfully.")
+                    return True
+                
+                error_text = await resp.text()
+                if resp.status == 423:
+                    _LOGGER.error("Reboot failed: Charger %s is LOCKED (423). This usually means it is busy or charging.", charger_id)
+                else:
+                    _LOGGER.error("Failed to reboot charger %s. Status: %s, Response: %s", charger_id, resp.status, error_text)
+                return False
+
+    async def async_start_session(self, evse_id: str) -> bool:
+        """Start a charging session on a specific EVSE."""
+        token = await self.async_get_valid_credentials()
+        url = f"{self.ampeco_base_url}/session/start"
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        payload = {"evseId": int(evse_id)}
+
+        _LOGGER.info("Starting session on EVSE %s via %s", evse_id, url)
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=payload) as resp:
+                if resp.status in [200, 201, 202]:
+                    return True
+                
+                error_text = await resp.text()
+                _LOGGER.error("Failed to start session on EVSE %s. Status: %s, Response: %s", evse_id, resp.status, error_text)
+                return False
+
+    async def async_stop_session(self, session_id: str) -> bool:
+        """Stop a specific charging session."""
+        token = await self.async_get_valid_credentials()
+        url = f"{self.ampeco_base_url}/session/{session_id}/end"
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+        _LOGGER.info("Stopping session %s via %s", session_id, url)
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers) as resp:
+                if resp.status in [200, 202, 204]:
+                    return True
+                
+                error_text = await resp.text()
+                _LOGGER.error("Failed to stop session %s. Status: %s, Response: %s", session_id, resp.status, error_text)
+                return False
 
     async def async_patch_settings(self, settings: dict) -> None:
         """Transmit parameter adjustments over a secure HTTP PATCH query structure to the hardware."""

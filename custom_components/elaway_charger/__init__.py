@@ -13,7 +13,7 @@ from .const import DOMAIN
 from .api import ElawayAPI
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS = ["sensor", "button", "binary_sensor", "switch", "number"]
+PLATFORMS = ["sensor", "button", "binary_sensor", "switch", "number", "text"]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Elaway from a config entry."""
