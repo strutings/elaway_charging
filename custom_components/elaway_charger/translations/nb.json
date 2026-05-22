@@ -5,10 +5,8 @@
         "title": "Konfigurer Elaway-lader",
         "description": "Skriv inn din Elaway/Ampeco-kontoinformasjon nedenfor for å koble til ladeboksen din.",
         "data": {
-          "username": "Brukernavn (E-post)",
-          "password": "Passord",
-          "client_id": "Auth0 Client ID (Unik streng)",
-          "elaway_client_secret": "Elaway Client Secret"
+          "username": "E-post",
+          "password": "Passord"
         }
       }
     },

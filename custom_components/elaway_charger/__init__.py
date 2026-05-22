@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 from datetime import timedelta
-import aiohttp
 import logging
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import DOMAIN
 from .api import ElawayAPI
@@ -20,15 +21,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
 
     # Initialiser API-klienten
+# Initialiser API-klienten med lagret sikkerhetsnøkkel
     api = ElawayAPI(
-        username=entry.data.get("username") or entry.data.get("username_email"),
+        username=entry.data.get("username"),
         password=entry.data.get("password"),
-        client_id=entry.data.get("client_id"),
-        elaway_client_id=entry.data.get("elaway_client_id"),
-        elaway_client_secret=entry.data.get("elaway_client_secret"),
-        ampeco_api_url=entry.data.get("ampeco_api_url", "https://no.eu-elaway.charge.ampeco.tech/api/v1/app"),
     )
-
     # Hardkodede referanser for lader og EVSE
     CHARGER_ID = "22408"
     api.evse_id = "21357"
@@ -41,11 +38,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             url = f"{api.ampeco_base_url}/personal/charge-points/{CHARGER_ID}"
             headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
             
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers) as resp:
-                    if resp.status != 200:
-                        raise UpdateFailed(f"API failed with status {resp.status} at {url}")
-                    return await resp.json()
+            # Bruker Home Assistants felles sesjon (forhindrer minnelekkasje og treghet)
+            session = async_get_clientsession(hass)
+            
+            async with session.get(url, headers=headers) as resp:
+                if resp.status != 200:
+                    raise UpdateFailed(f"API failed with status {resp.status} at {url}")
+                return await resp.json()
+                
         except Exception as err:
             raise UpdateFailed(f"Failed to communicate with Elaway: {err}") from err
 
@@ -70,6 +70,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
+
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload Elaway integration config entry platforms."""

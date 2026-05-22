@@ -1,18 +1,15 @@
 # ⚡ Elaway Charger integration for Home Assistant
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
-![Version](https://img.shields.io/badge/Version-3.4.7-emerald.svg?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-4.0.0-emerald.svg?style=for-the-badge)
 ![Maintained](https://img.shields.io/badge/Maintained%3F-Yes-emerald.svg?style=for-the-badge)
 
-An unofficial Home Assistant integration for **Elaway** charging stations running on the Ampeco platform. This integration provides full control over charging, real-time data, and a suite of diagnostic sensors.
-
-Distributed and maintained by **Eirik Skorstad**.
-
+An unofficial Home Assistant integration for **Elaway** charging stations running on the Ampeco platform. This integration can be utilized by any user provisioned with Elaway as their charging operator through housing cooperatives, condominiums, or apartment co-ownerships (borettslag og sameier). It provides full control over charging, real-time data, and a suite of diagnostic sensors by securely replicating the official mobile application authentication flows.
 ---
 
 ## ✨ Features
 
-The integration creates a unified device in Home Assistant (**Ampeco Powered Charger by Eirik Skorstad**) containing the following entities:
+The integration creates a unified device in Home Assistant (**Ampeco Powered Elaway Charger**) containing the following entities:
 
 * **Controls:**
     * `Start Charging` / `Stop Charging` buttons tailored for Ampeco sessions.
@@ -30,18 +27,13 @@ The integration creates a unified device in Home Assistant (**Ampeco Powered Cha
 
 ---
 
-## 🔑 How to retrieve API Credentials
+## 🔑 Authentication Architecture
 
-To set up the integration, you need credentials from the Elaway web portal. 
+Unlike previous versions, this integration does not require complex browser developer tools interception or manual token extraction. The component fully automates the native mobile client authentication sequence natively:
 
-1.  Log in to the Elaway charging portal in **Chrome** or **Edge**.
-2.  Press `F12` to open Developer Tools and go to the **Network** tab.
-3.  Refresh the page (`F5`).
-4.  Search for `/user` or `login` in the filter box.
-5.  Check the **Headers** or **Response** for:
-    * `client_id` (Your unique Auth0 string)
-    * `elaway_client_secret`
-    * `ampeco_api_url` *(Usually `https://no.eu-elaway.charge.ampeco.tech/api/v1/app`)*
+1. **Auth0 Handshake**: Initiates an authorization block simulating an iOS device agent, leveraging a dynamically generated Proof Key for Code Exchange (PKCE) challenge layer (`S256`).
+2. **Token Grant**: Programmatically exchanges validation strings against the Auth0 API to retrieve standard `access_token` and `id_token` bundles.
+3. **Ampeco Platform Exchange**: Packages identity keys as a string-serialized payload model alongside mandatory system tracking headers (`x-platform`, `x-mobile-app-bundle-id`, `x-internal-app-version`) to seamlessly generate valid application bearer tokens.
 
 ---
 
@@ -62,8 +54,8 @@ Click the button below to add this repository to your HACS instance:
 
 ### Method 2: Manual Installation
 
-1. Download the repository and extract the `.zip`.
-2. Upload the `elaway_charger` folder to your Home Assistant installation:
+1. Download the repository and extract the archive folder.
+2. Upload the `elaway_charger` folder to your Home Assistant installation components directory:
    `└── /config/custom_components/elaway_charger/`
 3. **Restart Home Assistant.**
 
@@ -74,14 +66,14 @@ Click the button below to add this repository to your HACS instance:
 1. Go to **Settings** -> **Devices & Services**.
 2. Click **+ Add Integration**.
 3. Search for `Elaway Charger`.
-4. Enter your username, password, and the API credentials retrieved in the previous steps.
-5. Click **Submit**.
+4. Enter the account registered email address (username) and password.
+5. Click **Submit** to finalize device setup and initialize sensor assets.
 
 ---
 
 ## 🛠️ Troubleshooting
 
-To enable debug logging, add the following to your `configuration.yaml`:
+To enable debug logging for runtime connection testing or protocol formatting analysis, add the following configuration block onto your primary `configuration.yaml` file:
 
 ```yaml
 logger:

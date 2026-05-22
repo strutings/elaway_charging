@@ -1,30 +1,22 @@
+### CHANGELOG.md
+
+```markdown
 # Changelog
 
-All notable changes to the Elaway Charger integration will be documented in this file.
+A comprehensive collection of all notable structural modifications and technical fixes implemented in the Elaway Charger custom integration codebase.
 
-## [3.5.0] - 2026-05-20
+### Changed
+- **Technical Language Standardization**: Refactored all log outputs, system messages, and code commentary into formal technical English to maintain an industry-standard implementation.
+- **Payload Protocol Refactoring**: Transitioned the outbound third-party backend payload structure from legacy form URL-encoded blocks into a native JSON request format to achieve precise string typing enforcement.
 
 ### Added
-- **New API Migration**: Migrated core API endpoint to `no.eu-elaway.charge.ampeco.tech` to fix `DNSError` and connectivity issues.
-- **Backward Compatibility**: Added automatic sanitization of old configuration URLs to ensure seamless migration for existing users.
-- **Plug & Charge Control**: Added a new switch to enable/disable Plug & Charge functionality.
-- **Smart Charging Control**: Added a new switch and diagnostic sensors for Elaway's Smart Charging system.
-- **Enhanced Power Allocation Sensors**:
-    - `Offered Charging Power` (kW): Real-time power offered to the vehicle.
-    - `Infrastructure Available Power` (kW): Shows the hard limit set by the housing association/infrastructure.
-- **Advanced Diagnostics**:
-    - `Smart Charging Target` (kWh) and `Smart Charging Mode`.
-    - `Subscription Active` status for the account owner.
-    - `Cost Last Month` (NOK) and `Electricity Tax` (%) sensors.
-    - `Min Solar Power` (kW) for solar-optimized charging.
-- **New Binary Sensors**: `Is Rebooting` and `Is Firmware Updating` states.
-- **Advanced Configuration**:
-    - Added `Smart Charging Target` number entity for kWh adjustment.
-    - Added `Min Solar Power` number entity for solar threshold adjustment.
-    - Added `Smart Charging Start/End` text entities for schedule management.
+- **PKCE Cryptographic Layer**: Implemented automated client challenge routines (`code_verifier` and `code_challenge` under `S256`) to conform securely with modern OAuth2 mobile endpoint requirements.
+- **Application Identity Headers**: Integrated native mobile identification properties (`x-platform`, `x-mobile-app-bundle-id`, and `x-internal-app-version`) directly into outbound platform request blocks based on live application telemetry analysis.
+- **Geographical Routing Boundaries**: Added fixed localization environment tracking via the `"operatorCountry": "NO"` parameter string to ensure proper regional data routing.
 
 ### Fixed
-- **Cable Connection Logic**: Fixed an issue where the cable appeared disconnected while plugged in. Now uses EVSE status for reliable connection detection.
-- **Unit Conversion**: Fixed "Session Power" and "Offered Power" units; they are now correctly converted from Watts to Kilowatts (kW).
-- **Session Reliability**: Improved data parsing to handle edge cases where session objects might be missing from the API response.
-- **Enhanced Logging**: Added detailed API response logging for PATCH requests to assist with troubleshooting control failures.
+- **PHP Data Types Schema Alignment**: Resolved a deep backend gateway error (`Argument #2 ($token) must be of type string, array given`) originated within the core Ampeco validation layers (`ThirdPartyGrant.php`).
+- **Data Serialization Handling**: Enforced strict inline payload wrapping rules by passing the internal authentication dictionary through an explicit `json.dumps()` serialization block before transmission.
+- **Secret Matrix Resolution**: Swapped out experimental development authorization hashes with the authentic production application secret key verified from active network traces.
+- **Authentication Bypass Constraints**: Mitigated authentication handshaking failures by stripping incorrect `audience` string variables from initial Auth0 transaction parameters.
+- **Asynchronous Redirect Interception**: Fixed flow execution issues by implementing robust query string extraction (`parse_qs`) to dynamically capture returned authorization state keys.

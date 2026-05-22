@@ -1,4 +1,4 @@
-"""Elaway API Client handling Auth0 web-flow simulation identical to the official iOS/Android mobile applications."""
+"""Elaway API Client handling Auth0 web-flow simulation identical to the iOS/Android mobile app."""
 from __future__ import annotations
 
 import logging
@@ -18,24 +18,20 @@ ELAWAY_AUTH_URL = "https://auth.elaway.io/authorize"
 ELAWAY_TOKEN_URL = "https://auth.elaway.io/oauth/token"
 AMPECO_BASE_URL = "https://no.eu-elaway.charge.ampeco.tech/api/v1/app"
 
-# Production identifiers verified from application network traffic
+# Korrekte systemnøkler verifisert direkte fra appens faktiske nettverkstrafikk
 LIVE_AUTH0_CLIENT_ID = "M2kaE3PPzgBquzt0EuJd7zeCJms7mOcu"
-LIVE_AMPECO_CLIENT_ID = "1"
-LIVE_AMPECO_CLIENT_SECRET = "Ls6ANaFlM8IzawsrldR9pZM4cft2L3oMDAenPf0N"
-APP_BUNDLE_ID = "io.elaway.no.app"
-APP_VERSION = "3.182.0"
+LIVE_AMPECO_CLIENT_ID = "elaway-mobile-app"
 
 class ElawayAPI:
-    """API Client wrapper simulating the official mobile application web authentication flow."""
+    """API Client wrapper simulating the official mobile app web authentication flow."""
 
     def __init__(self, username=None, password=None, ampeco_api_url=None):
-        """Initialize the API client configuration requirements with user credentials."""
+        """Initialize the API client structural requirements with user credentials only."""
         self.username = username
         self.password = password
         
         self.client_id = LIVE_AUTH0_CLIENT_ID
         self.elaway_client_id = LIVE_AMPECO_CLIENT_ID
-        self.elaway_client_secret = LIVE_AMPECO_CLIENT_SECRET
         
         self.ampeco_base_url = ampeco_api_url or AMPECO_BASE_URL
         self.ampeco_token_url = f"{self.ampeco_base_url}/oauth/token"
@@ -45,14 +41,14 @@ class ElawayAPI:
         self.evse_id = None 
 
     def _generate_pkce_pair(self) -> tuple[str, str]:
-        """Generate a cryptographic verifier and challenge pair for PKCE authentication."""
+        """Genererer en kryptografisk verifier og challenge for PKCE."""
         verifier = secrets.token_urlsafe(32)
         sha256_hash = hashlib.sha256(verifier.encode('utf-8')).digest()
         challenge = base64.urlsafe_b64encode(sha256_hash).decode('utf-8').replace('=', '').replace('+', '-').replace('/', '_')
         return verifier, challenge
 
     async def async_get_valid_credentials(self) -> str:
-        """Retrieve a valid token, executing authentication logic if the current token is expired."""
+        """Main method to retrieve a valid token, handling token expiration logic."""
         if self.ampeco_token and self.expires_at > time.time():
             return self.ampeco_token
 
@@ -63,8 +59,8 @@ class ElawayAPI:
             raise Exception(str(e))
 
     async def _perform_login(self) -> str:
-        """Execute automated authentication flow against Auth0 and exchange tokens with the Ampeco platform."""
-        _LOGGER.info("Initiating automated authentication sequence against Auth0...")
+        """Simulerer en iPhone som logger inn på Auth0 og veksler til et gyldig Ampeco-token."""
+        _LOGGER.info("Starter helautomatisk mobil-pålogging mot Auth0...")
         
         headers = {
             "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
@@ -77,7 +73,7 @@ class ElawayAPI:
         
         async with aiohttp.ClientSession(headers=headers, cookie_jar=aiohttp.CookieJar(unsafe=True)) as session:
             
-            # STEP 1: Initialize Auth0 Authorize session
+            # STEG 1: Start Auth0-sesjon
             auth_url = (
                 f"{ELAWAY_AUTH_URL}?response_type=code"
                 f"&client_id={self.client_id}"
@@ -90,11 +86,11 @@ class ElawayAPI:
             
             async with session.get(auth_url, allow_redirects=True) as resp:
                 if resp.status != 200:
-                    raise Exception(f"Auth0 authorization initialization failed: {resp.status}")
+                    raise Exception(f"Auth0-initiering feilet: {resp.status}")
                 final_url = str(resp.url)
                 actual_state = parse_qs(urlparse(final_url).query).get("state", [local_state])[0]
 
-            # STEP 2: Post user credentials to the Auth0 login form
+            # STEG 2: Post e-post og passord til Auth0
             login_url = f"https://auth.elaway.io/u/login?state={actual_state}"
             payload = {
                 "state": actual_state,
@@ -105,19 +101,19 @@ class ElawayAPI:
 
             async with session.post(login_url, data=payload, allow_redirects=False) as resp:
                 if resp.status not in (301, 302):
-                    raise Exception("Auth0 authentication rejected. Check provided credentials.")
+                    raise Exception("Auth0 avviste innloggingen. Vennligst sjekk e-post og passord.")
                 location = resp.headers.get("Location", "")
 
-            # STEP 3: Follow redirection targets to extract the authorization code
+            # STEG 3: Hent autorisasjonskode
             if "code=" not in location:
                 async with session.get(urljoin("https://auth.elaway.io", location), allow_redirects=False) as resp:
                     location = resp.headers.get("Location", "")
 
             code = parse_qs(urlparse(location).query).get("code", [None])[0]
             if not code:
-                raise Exception("Failed to retrieve authorization code from Auth0 endpoint redirection.")
+                raise Exception("Kunne ikke fange opp autorisasjonskoden fra Auth0.")
 
-            # STEP 4: Exchange authorization code for core Auth0 tokens
+            # STEG 4: Hent ut de rå Auth0-tokenene
             token_payload = {
                 "grant_type": "authorization_code",
                 "client_id": self.client_id,
@@ -128,57 +124,44 @@ class ElawayAPI:
 
             async with session.post(ELAWAY_TOKEN_URL, json=token_payload) as resp:
                 if resp.status != 200:
-                    raise Exception(f"Auth0 token exchange sequence failed: {await resp.text()}")
+                    raise Exception(f"Auth0 tokenutveksling feilet: {await resp.text()}")
                 
                 auth0_data = await resp.json()
                 access_token = auth0_data.get("access_token")
                 id_token = auth0_data.get("id_token")
-                refresh_token = auth0_data.get("refresh_token")
-                expires_in = auth0_data.get("expires_in", 86400)
 
-            # STEP 5: Perform third-party token exchange with the Ampeco platform backend
-            token_obj = {
-                "idToken": id_token,
+            # STEG 5: Det offisielle skjemabaserte tokenbyttet mot Ampeco hentet fra HAR-filen din.
+            token_bundle = {
                 "accessToken": access_token,
-                "tokenType": "Bearer",
-                "expiresAt": int(time.time() + expires_in),
-                "refreshToken": refresh_token,
-                "scope": "openid profile email offline_access"
+                "idToken": id_token,
+                "scope": "openid profile email offline_access",
+                "expiresIn": 86400,
+                "tokenType": "Bearer"
             }
 
-            # Enforce string serialization on the inner token object to fulfill Ampeco strict backend validation rules
+            # Nøkkelen til suksess: Vi sender kun elaway-mobile-app UTEN client_secret over form-urlencoded!
             ampeco_payload = {
-                "token": json.dumps(token_obj),
-                "client_id": self.elaway_client_id,
-                "client_secret": self.elaway_client_secret,
                 "grant_type": "third-party",
                 "type": "auth0",
-                "operatorCountry": "NO"
-            }
-
-            # Inject required mobile application identification platform headers verified from application telemetry
-            ampeco_headers = {
-                "x-platform": "ios",
-                "x-mobile-app-bundle-id": APP_BUNDLE_ID,
-                "x-internal-app-version": APP_VERSION,
-                "Content-Type": "application/json"
+                "token": json.dumps(token_bundle),
+                "client_id": self.elaway_client_id
             }
             
-            _LOGGER.info("Transmitting string-serialized third-party token payload to the Ampeco platform...")
-            async with session.post(self.ampeco_token_url, headers=ampeco_headers, json=ampeco_payload) as resp:
+            _LOGGER.info("Utfører det reelle Ampeco-tokenbyttet identisk med appens nettverkstrafikk...")
+            async with session.post(self.ampeco_token_url, data=ampeco_payload) as resp:
                 if resp.status != 200:
                     error_details = await resp.text()
-                    raise Exception(f"Ampeco token exchange sequence rejected: {error_details}")
+                    raise Exception(f"Ampeco avviste tokenbyttet: {error_details}")
                 
                 data = await resp.json()
                 self.ampeco_token = data.get("access_token")
                 self.expires_at = time.time() + data.get("expires_in", 3600)
                 
-                _LOGGER.info("Ampeco platform authentication successful. Access token initialized.")
+                _LOGGER.info("Ampeco-autentisering vellykket!")
                 return self.ampeco_token
 
     async def async_patch_charger(self, charger_id: str, payload: dict) -> bool:
-        """Patch configuration parameters on a specific charge point endpoint."""
+        """Patch settings on a specific charge point."""
         token = await self.async_get_valid_credentials()
         url = f"{self.ampeco_base_url}/personal/charge-points/{charger_id}"
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
@@ -187,7 +170,7 @@ class ElawayAPI:
                 return resp.status in [200, 204]
 
     async def async_reboot_charger(self, charger_id: str) -> bool:
-        """Transmit a hardware reboot command to a specific charge point endpoint."""
+        """Send reboot command to a specific charge point."""
         token = await self.async_get_valid_credentials()
         url = f"{self.ampeco_base_url}/personal/charge-points/{charger_id}/reboot"
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
@@ -196,7 +179,7 @@ class ElawayAPI:
                 return resp.status in [200, 201, 202, 204]
 
     async def async_start_session(self, evse_id: str) -> bool:
-        """Initiate a transaction session on a specific EVSE identification endpoint."""
+        """Start a charging session on a specific EVSE."""
         token = await self.async_get_valid_credentials()
         url = f"{self.ampeco_base_url}/session/start"
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
@@ -206,7 +189,7 @@ class ElawayAPI:
                 return resp.status in [200, 201, 202]
 
     async def async_stop_session(self, session_id: str) -> bool:
-        """Terminate an active transaction session on a specific session endpoint."""
+        """Stop a specific charging session."""
         token = await self.async_get_valid_credentials()
         url = f"{self.ampeco_base_url}/session/{session_id}/end"
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
@@ -215,7 +198,7 @@ class ElawayAPI:
                 return resp.status in [200, 202, 204]
 
     async def async_patch_settings(self, settings: dict) -> None:
-        """Transmit parameters adjustments over a secure HTTP PATCH query structure to the hardware."""
+        """Transmit parameter adjustments over a secure HTTP PATCH query structure to the hardware."""
         token = await self.async_get_valid_credentials()
         if not self.evse_id:
             raise Exception("Cannot update hardware configurations: EVSE identification key context is absent.")
